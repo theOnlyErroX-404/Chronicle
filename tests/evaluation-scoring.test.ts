@@ -141,4 +141,18 @@ describe("evaluation scoring", () => {
     expect(result.relationships.matched).toBe(first.relationships.length);
     expect(result.perReport).toHaveLength(2);
   });
+
+  it("loads the external golden-set.json and validates every report against the contract enums", () => {
+    expect(GOLDEN_REPORTS).toHaveLength(4);
+    for (const report of GOLDEN_REPORTS) {
+      expect(report.id).toMatch(/^[a-z0-9-]+$/);
+      expect(report.entities.length).toBeGreaterThan(0);
+      for (const entityItem of report.entities) {
+        expect(["threat-actor", "malware", "tool", "vulnerability", "indicator", "sector", "country", "campaign", "email", "file-path"]).toContain(entityItem.type);
+      }
+      for (const rel of report.relationships) {
+        expect(["uses", "exploits", "targets", "attributed-to", "communicates-with", "mitigated-by"]).toContain(rel.type);
+      }
+    }
+  });
 });
