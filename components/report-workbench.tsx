@@ -3,13 +3,9 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
 import type { Graph } from "@/modules/shared/contracts";
+import { ENTITY_TYPE_COLORS, formatBytes, MAX_REPORT_BYTES } from "@/lib/presentation";
 
 type Job = { id: string; status: string; progress?: string; partial?: boolean; error?: string };
-
-const colors: Record<string, string> = {
-  "threat-actor": "#ef4444", malware: "#f97316", tool: "#eab308", vulnerability: "#a855f7",
-  indicator: "#06b6d4", sector: "#22c55e", country: "#3b82f6", campaign: "#ec4899", email: "#14b8a6", "file-path": "#94a3b8",
-};
 
 function GraphViewer({ graph }: { graph: Graph }) {
   const container = useRef<HTMLDivElement>(null);
@@ -17,7 +13,7 @@ function GraphViewer({ graph }: { graph: Graph }) {
   useEffect(() => {
     if (!container.current) return;
     const elements: ElementDefinition[] = [
-      ...graph.nodes.map((node) => ({ data: { id: node.id, label: node.name, color: colors[node.type] ?? "#94a3b8" } })),
+      ...graph.nodes.map((node) => ({ data: { id: node.id, label: node.name, color: ENTITY_TYPE_COLORS[node.type] ?? "#94a3b8" } })),
       ...graph.edges.map((edge) => ({ data: { id: edge.id, source: edge.source, target: edge.target, label: edge.type } })),
     ];
     cy.current = cytoscape({
@@ -85,7 +81,7 @@ export function ReportWorkbench() {
         <label htmlFor="report-url">Public report URL</label>
         <input id="report-url" value={url} onChange={(event) => { setUrl(event.target.value); setFile(null); }} placeholder="https://security.vendor.com/research/report" type="url" />
         <span className="or">or</span>
-        <label htmlFor="report-file">Threat report PDF (max 10 MB)</label>
+        <label htmlFor="report-file">Threat report PDF (max {formatBytes(MAX_REPORT_BYTES)})</label>
         <input id="report-file" type="file" accept="application/pdf,.pdf" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setUrl(""); }} />
         <button type="submit" disabled={Boolean(job && !["done", "failed"].includes(job.status))}>Analyze report</button>
       </form>

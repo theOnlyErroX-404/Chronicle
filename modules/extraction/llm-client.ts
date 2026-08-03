@@ -146,7 +146,7 @@ export class OllamaLlmClient implements LlmClient {
           model: config.ollamaChatModel,
           stream: false,
           format,
-          options: { temperature: 0, num_predict: 2_048, seed: 1337 },
+          options: { temperature: 0, num_predict: config.extractionMaxTokens, seed: 1337 },
           messages,
         }),
       });

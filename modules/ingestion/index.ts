@@ -35,7 +35,7 @@ const readBodyWithinLimit = async (response: Response) => {
 };
 
 const fetchPublicReport = async (rawUrl: string, redirects = 0): Promise<{ bytes: Uint8Array; contentType: string }> => {
-  if (redirects > 3) throw new ChronicleError("The report URL redirected too many times.");
+  if (redirects > config.maxRedirects) throw new ChronicleError("The report URL redirected too many times.");
   const url = await assertSafePublicUrl(rawUrl);
   const response = await fetch(url, {
     redirect: "manual",
