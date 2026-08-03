@@ -22,6 +22,8 @@ const RELATIONSHIP_TYPE_ENUM = ["uses", "exploits", "targets", "attributed-to", 
 // most relationship types). Splitting gives each pass a smaller, sharper schema:
 // pass 1 extracts entities, pass 2 extracts relationships whose source/target are
 // hard-constrained to the exact extracted entity names via the JSON-schema enum.
+// The schemas are plain JSON Schema, so the same two passes drive both the
+// Ollama constrained decoder and OpenAI-compatible structured outputs.
 const entitiesSchema = {
   type: "object",
   additionalProperties: false,
@@ -118,24 +120,53 @@ Report segment:
 ${chunk}`;
 };
 
-const ollamaBase = () => config.ollamaBaseUrl.replace(/\/$/, "");
+const invalidOutput = () =>
+  new ChronicleError("The LLM returned output that failed schema validation.", 502, "https://chronicle.local/problems/invalid-llm-output");
 
-const classifyFetchError = (error: unknown): ChronicleError => {
-  if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) {
-    return new ChronicleError("The LLM request timed out.", 504, "https://chronicle.local/problems/llm-timeout");
+const parseEntities = (payload: unknown): ExtractedEntity[] => {
+  try {
+    return EntitiesOnlySchema.parse(payload).entities;
+  } catch {
+    throw invalidOutput();
   }
-  return new ChronicleError("Ollama is unavailable. Start Ollama and pull the configured model.", 503, "https://chronicle.local/problems/llm-unavailable");
 };
+
+const parseRelationships = (payload: unknown): ExtractedRelationship[] => {
+  try {
+    return RelationshipsOnlySchema.parse(payload).relationships;
+  } catch {
+    throw invalidOutput();
+  }
+};
+
+type ChatFormat = "json" | object;
+type ChatFn = (messages: Array<{ role: string; content: string }>, format: ChatFormat) => Promise<unknown>;
+
+const runTwoPass = async (chat: ChatFn, chunk: string): Promise<ExtractionResult> => {
+  const entityFormat: ChatFormat = config.extractionFormat === "schema" ? entitiesSchema : "json";
+  const entities = parseEntities(
+    await chat([{ role: "system", content: systemPrompt }, { role: "user", content: entitiesGuidance(chunk) }], entityFormat),
+  );
+  if (entities.length === 0) return { entities, relationships: [] };
+  const names = [...new Set(entities.map((entity) => entity.name.trim()).filter(Boolean))];
+  const relationshipFormat: ChatFormat = config.extractionFormat === "schema" ? relationshipsSchema(names) : "json";
+  const relationships = parseRelationships(
+    await chat([{ role: "system", content: systemPrompt }, { role: "user", content: relationshipsGuidance(chunk, entities) }], relationshipFormat),
+  );
+  return { entities, relationships };
+};
+
+const isTimeout = (error: unknown) => error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+const timeoutError = () => new ChronicleError("The LLM request timed out.", 504, "https://chronicle.local/problems/llm-timeout");
+
+const ollamaBase = () => config.ollamaBaseUrl.replace(/\/$/, "");
 
 export class OllamaLlmClient implements LlmClient {
   async extract(chunk: string): Promise<ExtractionResult> {
-    const format = config.extractionFormat === "schema" ? entitiesSchema : "json";
-    const entities = await this.extractEntities(chunk, format);
-    const relationships = entities.length > 0 ? await this.extractRelationships(chunk, entities) : [];
-    return { entities, relationships };
+    return runTwoPass((messages, format) => this.chat(messages, format), chunk);
   }
 
-  private async chat(messages: Array<{ role: string; content: string }>, format: object | "json"): Promise<unknown> {
+  private async chat(messages: Array<{ role: string; content: string }>, format: ChatFormat): Promise<unknown> {
     let response: Response;
     try {
       response = await fetch(`${ollamaBase()}/api/chat`, {
@@ -151,7 +182,8 @@ export class OllamaLlmClient implements LlmClient {
         }),
       });
     } catch (error) {
-      throw classifyFetchError(error);
+      if (isTimeout(error)) throw timeoutError();
+      throw new ChronicleError("Ollama is unavailable. Start Ollama and pull the configured model.", 503, "https://chronicle.local/problems/llm-unavailable");
     }
     if (!response.ok) throw new ChronicleError(`Ollama returned HTTP ${response.status}.`, 503, "https://chronicle.local/problems/llm-unavailable");
 
@@ -159,33 +191,7 @@ export class OllamaLlmClient implements LlmClient {
     try {
       return JSON.parse(payload.message?.content ?? "");
     } catch {
-      throw new ChronicleError("Ollama returned output that failed schema validation.", 502, "https://chronicle.local/problems/invalid-llm-output");
-    }
-  }
-
-  private async extractEntities(chunk: string, format: object | "json"): Promise<ExtractedEntity[]> {
-    const payload = await this.chat(
-      [{ role: "system", content: systemPrompt }, { role: "user", content: entitiesGuidance(chunk) }],
-      format,
-    );
-    try {
-      return EntitiesOnlySchema.parse(payload).entities;
-    } catch {
-      throw new ChronicleError("Ollama returned entity output that failed schema validation.", 502, "https://chronicle.local/problems/invalid-llm-output");
-    }
-  }
-
-  private async extractRelationships(chunk: string, entities: ExtractedEntity[]): Promise<ExtractedRelationship[]> {
-    const names = [...new Set(entities.map((entity) => entity.name.trim()).filter(Boolean))];
-    const format = config.extractionFormat === "schema" ? relationshipsSchema(names) : "json";
-    const payload = await this.chat(
-      [{ role: "system", content: systemPrompt }, { role: "user", content: relationshipsGuidance(chunk, entities) }],
-      format,
-    );
-    try {
-      return RelationshipsOnlySchema.parse(payload).relationships;
-    } catch {
-      throw new ChronicleError("Ollama returned relationship output that failed schema validation.", 502, "https://chronicle.local/problems/invalid-llm-output");
+      throw invalidOutput();
     }
   }
 
@@ -194,7 +200,8 @@ export class OllamaLlmClient implements LlmClient {
     try {
       response = await fetch(`${ollamaBase()}/api/tags`, { signal: AbortSignal.timeout(10_000) });
     } catch (error) {
-      throw classifyFetchError(error);
+      if (isTimeout(error)) throw timeoutError();
+      throw new ChronicleError("Ollama is unavailable. Start Ollama and pull the configured model.", 503, "https://chronicle.local/problems/llm-unavailable");
     }
     if (!response.ok) throw new ChronicleError(`Ollama returned HTTP ${response.status}.`, 503, "https://chronicle.local/problems/llm-unavailable");
 
@@ -206,7 +213,84 @@ export class OllamaLlmClient implements LlmClient {
   }
 }
 
+const openaiBase = () => config.openaiBaseUrl.replace(/\/$/, "");
+
+const schemaName = (format: ChatFormat) => (format === entitiesSchema ? "entities" : "relationships");
+
+const classifyOpenAiStatus = (status: number): ChronicleError => {
+  if (status === 401 || status === 403) {
+    return new ChronicleError("The LLM API key was rejected. Check OPENAI_API_KEY.", 401, "https://chronicle.local/problems/llm-auth");
+  }
+  if (status === 429) {
+    return new ChronicleError("The LLM provider rate limit was reached. Free tiers are capped per minute and per day.", 429, "https://chronicle.local/problems/llm-rate-limit");
+  }
+  return new ChronicleError(`The LLM provider returned HTTP ${status}.`, 502, "https://chronicle.local/problems/llm-upstream");
+};
+
+// Any OpenAI-compatible chat completions endpoint: OpenRouter, Groq, or Google
+// Gemini's OpenAI compatibility layer. The two-pass flow and JSON schemas are
+// identical to Ollama's; only the transport and the response_format wrapper
+// differ, so a report can switch providers with environment variables alone.
+export class OpenAiCompatibleLlmClient implements LlmClient {
+  async extract(chunk: string): Promise<ExtractionResult> {
+    return runTwoPass((messages, format) => this.chat(messages, format), chunk);
+  }
+
+  private async chat(messages: Array<{ role: string; content: string }>, format: ChatFormat): Promise<unknown> {
+    const response_format =
+      format === "json"
+        ? { type: "json_object" }
+        : { type: "json_schema", json_schema: { name: schemaName(format), schema: format } };
+    let response: Response;
+    try {
+      response = await fetch(`${openaiBase()}/chat/completions`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${config.openaiApiKey}` },
+        signal: AbortSignal.timeout(config.llmTimeoutMs),
+        body: JSON.stringify({
+          model: config.openaiChatModel,
+          temperature: 0,
+          max_tokens: config.extractionMaxTokens,
+          response_format,
+          messages,
+        }),
+      });
+    } catch (error) {
+      if (isTimeout(error)) throw timeoutError();
+      throw new ChronicleError("The LLM provider could not be reached. Check OPENAI_BASE_URL.", 502, "https://chronicle.local/problems/llm-upstream");
+    }
+    if (!response.ok) throw classifyOpenAiStatus(response.status);
+
+    const payload = (await response.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    try {
+      return JSON.parse(payload.choices?.[0]?.message?.content ?? "");
+    } catch {
+      throw invalidOutput();
+    }
+  }
+
+  async checkHealth(): Promise<void> {
+    let response: Response;
+    try {
+      response = await fetch(`${openaiBase()}/models`, {
+        headers: { authorization: `Bearer ${config.openaiApiKey}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch (error) {
+      if (isTimeout(error)) throw timeoutError();
+      throw new ChronicleError("The LLM provider could not be reached. Check OPENAI_BASE_URL.", 502, "https://chronicle.local/problems/llm-upstream");
+    }
+    if (!response.ok) throw classifyOpenAiStatus(response.status);
+  }
+}
+
 export const getLlmClient = (): LlmClient => {
-  if (config.llmProvider !== "ollama") throw new ChronicleError(`Unsupported LLM provider: ${config.llmProvider}.`, 500);
-  return new OllamaLlmClient();
+  if (config.llmProvider === "ollama") return new OllamaLlmClient();
+  if (config.llmProvider === "openai") {
+    if (!config.openaiBaseUrl || !config.openaiApiKey || !config.openaiChatModel) {
+      throw new ChronicleError("The OpenAI-compatible provider needs OPENAI_BASE_URL, OPENAI_API_KEY, and OPENAI_CHAT_MODEL.", 500);
+    }
+    return new OpenAiCompatibleLlmClient();
+  }
+  throw new ChronicleError(`Unsupported LLM provider: ${config.llmProvider}.`, 500);
 };

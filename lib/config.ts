@@ -7,9 +7,15 @@ const positiveInteger = (value: string | undefined, fallback: number) => {
 
 export const config = {
   apiToken: process.env.CHRONICLE_API_TOKEN,
+  // "ollama" (local, default) or "openai" for any OpenAI-compatible hosted
+  // endpoint (OpenRouter, Groq, Google Gemini). For a provider, set the three
+  // OPENAI_* variables; the two-pass extraction and JSON schemas are identical.
   llmProvider: process.env.LLM_PROVIDER ?? "ollama",
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434",
   ollamaChatModel: process.env.OLLAMA_CHAT_MODEL ?? "qwen2.5:3b",
+  openaiBaseUrl: process.env.OPENAI_BASE_URL ?? "",
+  openaiApiKey: process.env.OPENAI_API_KEY,
+  openaiChatModel: process.env.OPENAI_CHAT_MODEL ?? "",
   maxReportBytes: positiveInteger(process.env.MAX_REPORT_BYTES, MAX_REPORT_BYTES),
   urlFetchTimeoutMs: positiveInteger(process.env.URL_FETCH_TIMEOUT_MS, 15_000),
   maxRedirects: positiveInteger(process.env.MAX_REDIRECTS, 3),
