@@ -18,20 +18,6 @@ export const ENTITY_TYPE_COLORS: Record<string, string> = {
   "file-path": "#94a3b8",
 };
 
-export const ENTITY_TYPE_LABELS: Record<string, string> = {
-  "threat-actor": "Threat actor",
-  malware: "Malware",
-  tool: "Tool",
-  "web-shell": "Web shell",
-  vulnerability: "Vulnerability",
-  indicator: "Indicator",
-  sector: "Sector",
-  country: "Country",
-  campaign: "Campaign",
-  email: "Email",
-  "file-path": "File path",
-};
-
 export const formatBytes = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
   if (bytes < 1024) return `${Math.round(bytes)} B`;

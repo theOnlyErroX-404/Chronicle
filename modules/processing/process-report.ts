@@ -5,14 +5,9 @@ import { buildGraph, buildStixLiteBundle, completeEntityEndpoints } from "@/modu
 import { ChronicleError } from "@/modules/shared/errors";
 import { reportStore } from "@/modules/shared/report-store";
 
-export type ProcessReportOptions = {
-  onProgress?: (progress: string) => void;
-};
-
-export const processReport = async (reportId: string, source: IngestionSource, options: ProcessReportOptions = {}) => {
+export const processReport = async (reportId: string, source: IngestionSource) => {
   const setProgress = (text: string) => {
     reportStore.update(reportId, { progress: text });
-    options.onProgress?.(text);
   };
 
   const fail = (error: unknown, partial = false) => {
