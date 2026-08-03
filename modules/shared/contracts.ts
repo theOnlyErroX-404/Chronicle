@@ -29,6 +29,10 @@ export const ExtractionEntitySchema = z.object({
   // qwen2.5:3b frequently emits empty evidence for self-evident items (e.g. an
   // IOC row); empty is accepted rather than failing the whole chunk.
   evidence: z.string().max(1_500),
+  // Alternative names for the same entity, so the graph can merge alias nodes
+  // instead of rendering duplicates. The prompt tells the model to report
+  // aliases here rather than as separate entities.
+  aliases: z.array(z.string().min(1).max(300)).max(10).optional(),
 });
 
 export const ExtractionRelationshipSchema = z.object({

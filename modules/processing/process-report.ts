@@ -1,7 +1,7 @@
 import { extractCandidates, ExtractionFailureError } from "@/modules/extraction";
 import { getLlmClient } from "@/modules/extraction/llm-client";
 import { ingestReport, type IngestionSource } from "@/modules/ingestion";
-import { buildGraph, buildStixLiteBundle } from "@/modules/knowledge-modeling";
+import { buildGraph, buildStixLiteBundle, completeEntityEndpoints } from "@/modules/knowledge-modeling";
 import { ChronicleError } from "@/modules/shared/errors";
 import { reportStore } from "@/modules/shared/report-store";
 
@@ -33,19 +33,21 @@ export const processReport = async (reportId: string, source: IngestionSource, o
     const extraction = await extractCandidates(rawText, client, {
       onProgress: ({ current, total }) => setProgress(`chunk ${current}/${total}`),
     });
-    reportStore.update(reportId, { extraction, status: "modeling", progress: "modeling" });
+    const completed = completeEntityEndpoints(extraction);
+    reportStore.update(reportId, { extraction: completed, status: "modeling", progress: "modeling" });
 
-    const graph = buildGraph(extraction);
+    const graph = buildGraph(completed);
     const stixBundle = buildStixLiteBundle(reportId, graph);
     reportStore.update(reportId, { graph, stixBundle, status: "done", partial: undefined, progress: undefined });
   } catch (error) {
     if (error instanceof ExtractionFailureError) {
       // Partial success: a late chunk failed, but earlier chunks extracted fine.
       // Surface a partial graph/STIX bundle rather than discarding everything.
-      const graph = buildGraph(error.partial);
+      const completed = completeEntityEndpoints(error.partial);
+      const graph = buildGraph(completed);
       const stixBundle = buildStixLiteBundle(reportId, graph);
       reportStore.update(reportId, {
-        extraction: error.partial,
+        extraction: completed,
         graph,
         stixBundle,
         status: "failed",
