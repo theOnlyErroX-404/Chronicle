@@ -25,7 +25,7 @@ describe("OpenAiCompatibleLlmClient extraction passes", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const client = new OpenAiCompatibleLlmClient();
+    const client = new OpenAiCompatibleLlmClient({ baseUrl: "https://example.test", apiKey: "test-key", chatModel: "model", maxTokens: 8192 });
     const entities = await client.extractEntities("APT29 used SLUI.");
     const relationships = await client.extractRelationships("APT29 used SLUI.", entities);
 
@@ -33,7 +33,7 @@ describe("OpenAiCompatibleLlmClient extraction passes", () => {
     const [request] = fetchMock.mock.calls[0];
     expect(String(request)).toContain("/chat/completions");
     const headers = fetchMock.mock.calls[0][1].headers as Record<string, string>;
-    expect(headers.authorization).toBe(`Bearer ${process.env.OPENAI_API_KEY}`);
+    expect(headers.authorization).toBe("Bearer test-key");
     expect(headers["content-type"]).toBe("application/json");
 
     const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);

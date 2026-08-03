@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { config } from "@/lib/config";
+import { config, type OpenAiEndpoint } from "@/lib/config";
 import {
   ExtractionEntitySchema,
   ExtractionRelationshipSchema,
@@ -227,7 +227,7 @@ export class OllamaLlmClient implements LlmClient {
   }
 }
 
-const openaiBase = () => config.openaiBaseUrl.replace(/\/$/, "");
+const openaiBase = (endpoint: OpenAiEndpoint) => endpoint.baseUrl.replace(/\/$/, "");
 
 const schemaName = (format: ChatFormat) => (format === entitiesSchema ? "entities" : "relationships");
 
@@ -246,6 +246,19 @@ const classifyOpenAiStatus = (status: number): ChronicleError => {
 // identical to Ollama's; only the transport and the response_format wrapper
 // differ, so a report can switch providers with environment variables alone.
 export class OpenAiCompatibleLlmClient implements LlmClient {
+  private readonly endpoint: OpenAiEndpoint;
+
+  // Defaults to the flat OPENAI_* config so the class stays constructible
+  // without arguments; the failover client always passes an explicit endpoint.
+  constructor(endpoint?: OpenAiEndpoint) {
+    this.endpoint = endpoint ?? {
+      baseUrl: config.openaiBaseUrl,
+      apiKey: config.openaiApiKey ?? "",
+      chatModel: config.openaiChatModel,
+      maxTokens: config.openaiMaxTokens,
+    };
+  }
+
   async extractEntities(chunk: string): Promise<ExtractedEntity[]> {
     return runEntityPass((messages, format) => this.chat(messages, format), chunk);
   }
@@ -261,14 +274,14 @@ export class OpenAiCompatibleLlmClient implements LlmClient {
         : { type: "json_schema", json_schema: { name: schemaName(format), schema: format } };
     let response: Response;
     try {
-      response = await fetch(`${openaiBase()}/chat/completions`, {
+      response = await fetch(`${openaiBase(this.endpoint)}/chat/completions`, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${config.openaiApiKey}` },
+        headers: { "content-type": "application/json", authorization: `Bearer ${this.endpoint.apiKey}` },
         signal: AbortSignal.timeout(config.llmTimeoutMs),
         body: JSON.stringify({
-          model: config.openaiChatModel,
+          model: this.endpoint.chatModel,
           temperature: 0,
-          max_tokens: config.openaiMaxTokens,
+          max_tokens: this.endpoint.maxTokens,
           response_format,
           messages,
         }),
@@ -290,8 +303,8 @@ export class OpenAiCompatibleLlmClient implements LlmClient {
   async checkHealth(): Promise<void> {
     let response: Response;
     try {
-      response = await fetch(`${openaiBase()}/models`, {
-        headers: { authorization: `Bearer ${config.openaiApiKey}` },
+      response = await fetch(`${openaiBase(this.endpoint)}/models`, {
+        headers: { authorization: `Bearer ${this.endpoint.apiKey}` },
         signal: AbortSignal.timeout(10_000),
       });
     } catch (error) {
@@ -302,13 +315,85 @@ export class OpenAiCompatibleLlmClient implements LlmClient {
   }
 }
 
+// Tries the configured OpenAI-compatible endpoints in order. An endpoint that
+// rate-limits, rejects the key, or 5xxes is blacked out for a cooldown (longer
+// for repeated rate limits, which usually mean a daily free-tier pool is gone)
+// and the next endpoint takes over, so a single exhausted provider does not
+// stall extraction.
+export class FailoverLlmClient implements LlmClient {
+  private readonly clients: OpenAiCompatibleLlmClient[];
+  private readonly blackoutUntil: number[];
+  private readonly consecutiveFailures: number[];
+
+  constructor(endpoints: OpenAiEndpoint[]) {
+    if (endpoints.length === 0) {
+      throw new ChronicleError("No OpenAI-compatible endpoints configured.", 500);
+    }
+    this.clients = endpoints.map((endpoint) => new OpenAiCompatibleLlmClient(endpoint));
+    this.blackoutUntil = endpoints.map(() => 0);
+    this.consecutiveFailures = endpoints.map(() => 0);
+  }
+
+  async extractEntities(chunk: string): Promise<ExtractedEntity[]> {
+    return this.tryEndpoints((client) => client.extractEntities(chunk));
+  }
+
+  async extractRelationships(chunk: string, entities: ExtractedEntity[]): Promise<ExtractedRelationship[]> {
+    return this.tryEndpoints((client) => client.extractRelationships(chunk, entities));
+  }
+
+  async checkHealth(): Promise<void> {
+    return this.tryEndpoints((client) => client.checkHealth());
+  }
+
+  private isBlackedOut(index: number): boolean {
+    return Date.now() < this.blackoutUntil[index];
+  }
+
+  private blackout(index: number, error: unknown): void {
+    const status = error instanceof ChronicleError ? error.status : 0;
+    this.consecutiveFailures[index] += 1;
+    const failures = this.consecutiveFailures[index];
+    if (status === 429) {
+      // A single 429 is usually a per-minute throttle; a second one within a
+      // fresh window means the daily free pool is exhausted.
+      this.blackoutUntil[index] = Date.now() + (failures >= 2 ? 30 : 1) * 60_000;
+    } else if (status === 401 || status === 403) {
+      this.blackoutUntil[index] = Date.now() + 30 * 60_000;
+    } else if (status >= 500 || status === 504 || status === 0) {
+      this.blackoutUntil[index] = Date.now() + Math.min(60_000, failures * 15_000);
+    }
+  }
+
+  private async tryEndpoints<T>(operation: (client: OpenAiCompatibleLlmClient) => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    for (let index = 0; index < this.clients.length; index += 1) {
+      if (this.isBlackedOut(index)) continue;
+      try {
+        const result = await operation(this.clients[index]);
+        this.consecutiveFailures[index] = 0;
+        return result;
+      } catch (error) {
+        lastError = error;
+        this.blackout(index, error);
+      }
+    }
+    if (lastError instanceof Error) throw lastError;
+    throw new ChronicleError("Every LLM endpoint is cooling down after repeated failures. Try again shortly.", 503, "https://chronicle.local/problems/llm-unavailable");
+  }
+}
+
 export const getLlmClient = (): LlmClient => {
   if (config.llmProvider === "ollama") return new OllamaLlmClient();
   if (config.llmProvider === "openai") {
-    if (!config.openaiBaseUrl || !config.openaiApiKey || !config.openaiChatModel) {
-      throw new ChronicleError("The OpenAI-compatible provider needs OPENAI_BASE_URL, OPENAI_API_KEY, and OPENAI_CHAT_MODEL.", 500);
+    if (config.openAiEndpoints.length === 0) {
+      throw new ChronicleError(
+        "The OpenAI-compatible provider needs OPENAI_BASE_URL, OPENAI_API_KEY, and OPENAI_CHAT_MODEL, or numbered OPENAI_BASE_URL_2/... fallbacks.",
+        500,
+      );
     }
-    return new OpenAiCompatibleLlmClient();
+    if (config.openAiEndpoints.length === 1) return new OpenAiCompatibleLlmClient(config.openAiEndpoints[0]);
+    return new FailoverLlmClient(config.openAiEndpoints);
   }
   throw new ChronicleError(`Unsupported LLM provider: ${config.llmProvider}.`, 500);
 };

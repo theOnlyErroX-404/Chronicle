@@ -5,6 +5,34 @@ const positiveInteger = (value: string | undefined, fallback: number) => {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+export type OpenAiEndpoint = {
+  baseUrl: string;
+  apiKey: string;
+  chatModel: string;
+  maxTokens: number;
+};
+
+// Primary endpoint from the flat OPENAI_* variables, plus numbered fallbacks
+// (OPENAI_BASE_URL_2/OPENAI_API_KEY_2/OPENAI_CHAT_MODEL_2, then _3, ...) so the
+// client can fail over to another provider/model when one hits a rate limit.
+const buildOpenAiEndpoints = (): OpenAiEndpoint[] => {
+  const endpoints: OpenAiEndpoint[] = [];
+  const push = (baseUrl?: string, apiKey?: string, chatModel?: string, maxTokens?: number) => {
+    if (!baseUrl || !apiKey || !chatModel) return;
+    endpoints.push({ baseUrl, apiKey, chatModel, maxTokens: maxTokens ?? 8_192 });
+  };
+  push(process.env.OPENAI_BASE_URL, process.env.OPENAI_API_KEY, process.env.OPENAI_CHAT_MODEL, positiveInteger(process.env.OPENAI_MAX_TOKENS, 0) || undefined);
+  for (let index = 2; index <= 9; index += 1) {
+    push(
+      process.env[`OPENAI_BASE_URL_${index}`],
+      process.env[`OPENAI_API_KEY_${index}`],
+      process.env[`OPENAI_CHAT_MODEL_${index}`],
+      positiveInteger(process.env[`OPENAI_MAX_TOKENS_${index}`], 0) || undefined,
+    );
+  }
+  return endpoints;
+};
+
 export const config = {
   apiToken: process.env.CHRONICLE_API_TOKEN,
   // "ollama" (local, default) or "openai" for any OpenAI-compatible hosted
@@ -21,6 +49,11 @@ export const config = {
   // response truncates and fails schema validation). Slightly larger budget,
   // well under Gemini's 32k completion cap.
   openaiMaxTokens: positiveInteger(process.env.OPENAI_MAX_TOKENS, 8_192),
+  // Ordered endpoint list for the OpenAI-compatible provider. When an endpoint
+  // rate-limits, rejects the key, or 5xxes, the client blackouts it for a
+  // cooldown and continues with the next one, so one exhausted free tier does
+  // not stall the whole extraction.
+  openAiEndpoints: buildOpenAiEndpoints(),
   maxReportBytes: positiveInteger(process.env.MAX_REPORT_BYTES, MAX_REPORT_BYTES),
   urlFetchTimeoutMs: positiveInteger(process.env.URL_FETCH_TIMEOUT_MS, 15_000),
   maxRedirects: positiveInteger(process.env.MAX_REDIRECTS, 3),

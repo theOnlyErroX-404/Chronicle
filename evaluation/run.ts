@@ -32,7 +32,10 @@ const printResult = (result: EvaluationResult) => {
 const main = async () => {
   const client = getLlmClient();
   await client.checkHealth?.();
-  const modelName = config.llmProvider === "openai" ? config.openaiChatModel : config.ollamaChatModel;
+  const modelName =
+    config.llmProvider === "openai"
+      ? config.openAiEndpoints.map((endpoint) => endpoint.chatModel).join(", ") || config.openaiChatModel
+      : config.ollamaChatModel;
   console.log(`Evaluating ${GOLDEN_REPORTS.length} golden reports against ${modelName}...`);
   const result = await evaluate(GOLDEN_REPORTS, (text) => extractCandidates(text, client));
   printResult(result);
