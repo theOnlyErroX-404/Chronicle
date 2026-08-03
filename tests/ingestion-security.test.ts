@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { isIP } from "node:net";
 import { assertSafePublicUrl } from "@/modules/ingestion/security";
+
+const stubResolver = (address: string) => async () => [{ address, family: isIP(address) }];
+const publicIpResolver = stubResolver("93.184.216.34");
 
 describe("assertSafePublicUrl", () => {
   it("rejects unsupported schemes", async () => {
@@ -26,6 +30,16 @@ describe("assertSafePublicUrl", () => {
   });
 
   it("accepts a public host", async () => {
-    await expect(assertSafePublicUrl("https://example.com/report")).resolves.toBeInstanceOf(URL);
+    await expect(assertSafePublicUrl("https://example.com/report", publicIpResolver)).resolves.toBeInstanceOf(URL);
+  });
+
+  it("rejects a hostname that resolves to a private address", async () => {
+    await expect(assertSafePublicUrl("https://intranet.example/report", stubResolver("10.1.2.3"))).rejects.toThrow(/not allowed/);
+    await expect(assertSafePublicUrl("https://intranet.example/report", stubResolver("192.168.1.1"))).rejects.toThrow(/not allowed/);
+    await expect(assertSafePublicUrl("https://intranet.example/report", stubResolver("fe80::1"))).rejects.toThrow(/not allowed/);
+  });
+
+  it("rejects a host that cannot be resolved", async () => {
+    await expect(assertSafePublicUrl("https://missing.example/report", async () => { throw new Error("no such host"); })).rejects.toThrow("could not be resolved");
   });
 });

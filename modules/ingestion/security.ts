@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import type { LookupAddress } from "node:dns";
 import { ChronicleError } from "@/modules/shared/errors";
 
 const isPrivateIpv4 = (ip: string) => {
@@ -40,7 +41,9 @@ const isPrivateIpv6 = (ip: string) => {
   return false;
 };
 
-export const assertSafePublicUrl = async (rawUrl: string) => {
+export type HostResolver = (hostname: string) => Promise<LookupAddress[]>;
+
+export const assertSafePublicUrl = async (rawUrl: string, resolveHost: HostResolver = (hostname) => lookup(hostname, { all: true, verbatim: true })) => {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -64,7 +67,7 @@ export const assertSafePublicUrl = async (rawUrl: string) => {
     return url;
   }
 
-  const addresses = await lookup(hostname, { all: true, verbatim: true }).catch(() => {
+  const addresses = await resolveHost(hostname).catch(() => {
     throw new ChronicleError("The report host could not be resolved.");
   });
   if (!addresses.length || addresses.some(({ address, family: resolvedFamily }) => (resolvedFamily === 4 ? isPrivateIpv4(address) : isPrivateIpv6(address)))) rejectUnsafe();
