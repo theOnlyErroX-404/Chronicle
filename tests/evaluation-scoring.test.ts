@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ExtractedEntity, ExtractedRelationship, ExtractionResult } from "@/modules/shared/contracts";
+import { ENTITY_TYPE_VALUES, RELATIONSHIP_TYPE_VALUES } from "@/modules/shared/contracts";
 import { buildAliasMap, evaluate, scoreEntities, scoreRelationships, scoreReport, scoreSet } from "@/evaluation/scoring";
 import { GOLDEN_REPORTS } from "@/evaluation/golden-set";
 
@@ -148,10 +149,10 @@ describe("evaluation scoring", () => {
       expect(report.id).toMatch(/^[a-z0-9-]+$/);
       expect(report.entities.length).toBeGreaterThan(0);
       for (const entityItem of report.entities) {
-        expect(["threat-actor", "malware", "tool", "web-shell", "vulnerability", "indicator", "sector", "country", "campaign", "email", "file-path"]).toContain(entityItem.type);
+        expect(ENTITY_TYPE_VALUES).toContain(entityItem.type);
       }
       for (const rel of report.relationships) {
-        expect(["uses", "exploits", "targets", "attributed-to", "communicates-with", "mitigated-by", "executes", "downloads", "delivers", "exfiltrates"]).toContain(rel.type);
+        expect(RELATIONSHIP_TYPE_VALUES).toContain(rel.type);
       }
     }
   });

@@ -6,11 +6,12 @@
 export interface JobQueue {
   enqueue(task: () => Promise<void>): void;
   pending(): number;
+  running(): boolean;
 }
 
 class InMemoryJobQueue implements JobQueue {
   private readonly tasks: Array<() => Promise<void>> = [];
-  private running = false;
+  private busy = false;
 
   enqueue(task: () => Promise<void>): void {
     this.tasks.push(task);
@@ -21,17 +22,21 @@ class InMemoryJobQueue implements JobQueue {
     return this.tasks.length;
   }
 
+  running(): boolean {
+    return this.busy;
+  }
+
   private async pump(): Promise<void> {
-    if (this.running) return;
+    if (this.busy) return;
     const task = this.tasks.shift();
     if (!task) return;
-    this.running = true;
+    this.busy = true;
     try {
       await task();
     } catch (error) {
       console.error("[queue] job threw an unhandled error:", error);
     } finally {
-      this.running = false;
+      this.busy = false;
       void this.pump();
     }
   }

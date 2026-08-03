@@ -51,24 +51,72 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export const chunkReportText = (text: string, maxChars = config.extractionMaxChunkChars) => {
   const sentences = text.match(/[^.!?]+[.!?]+|.+$/g) ?? [text];
   const chunks: string[] = [];
-  let current = "";
-  for (const sentence of sentences) {
-    if (current && current.length + sentence.length > maxChars) {
-      chunks.push(current.trim());
-      current = "";
+  const add = (piece: string) => {
+    const trimmed = piece.trim();
+    if (trimmed) chunks.push(trimmed);
+  };
+  // Emit a piece, slicing any token that alone exceeds the ceiling so the
+  // invariant "every chunk <= maxChars" always holds.
+  const emit = (piece: string) => {
+    if (piece.length <= maxChars) {
+      add(piece);
+      return;
     }
+    for (let start = 0; start < piece.length; start += maxChars) add(piece.slice(start, start + maxChars));
+  };
+  let current = "";
+  const flush = () => {
+    emit(current);
+    current = "";
+  };
+  for (const sentence of sentences) {
+    if (sentence.length > maxChars) {
+      // Hard split: a single sentence longer than the ceiling must still
+      // respect it (word boundary when possible), or one oversized chunk would
+      // blow the model's time/context budget and defeat chunking entirely.
+      flush();
+      let piece = "";
+      for (const word of sentence.match(/\S+\s*/g) ?? [sentence]) {
+        if (piece && piece.length + word.length > maxChars) {
+          emit(piece);
+          piece = "";
+        }
+        piece += word;
+      }
+      emit(piece);
+      continue;
+    }
+    if (current && current.length + sentence.length > maxChars) flush();
     current += `${sentence} `;
   }
-  if (current.trim()) chunks.push(current.trim());
+  flush();
   return chunks;
 };
 
 export class ExtractionFailureError extends ChronicleError {
-  constructor(message: string, public readonly partial: ExtractionResult) {
-    super(message, 502, "https://chronicle.local/problems/llm-unavailable");
+  constructor(
+    message: string,
+    public readonly partial: ExtractionResult,
+    status = 502,
+    type = "https://chronicle.local/problems/llm-unavailable",
+  ) {
+    super(message, status, type);
     this.name = "ExtractionFailureError";
   }
 }
+
+export const MAX_EVIDENCE_CHARS = 60;
+
+// Service-side cap: the prompt asks the model to keep evidence under 60 chars,
+// but free-tier models exceed it. Truncate after extraction so the stored
+// contract (evidence <= 60) holds regardless of what the model returned.
+export const capEvidence = (extraction: ExtractionResult, maxChars = MAX_EVIDENCE_CHARS): ExtractionResult => {
+  const truncate = (evidence: string) => (evidence.length > maxChars ? evidence.slice(0, maxChars) : evidence);
+  return {
+    entities: extraction.entities.map((entity) => ({ ...entity, evidence: truncate(entity.evidence) })),
+    relationships: extraction.relationships.map((relationship) => ({ ...relationship, evidence: truncate(relationship.evidence) })),
+  };
+};
 
 export type ExtractionProgress = { current: number; total: number };
 export type ExtractOptions = {
@@ -104,7 +152,12 @@ export const extractCandidates = async (text: string, client = getLlmClient(), o
   const entitiesByChunk: ExtractedEntity[][] = [];
   const partial: ExtractionResult = { entities: [], relationships: [] };
   const failPartial = (error: unknown): never => {
-    throw new ExtractionFailureError(error instanceof Error ? error.message : "LLM extraction failed.", partial);
+    // Reflect the real failure (rate limit, timeout, invalid output, upstream
+    // error) instead of hardcoding 502/llm-unavailable, so callers can tell why
+    // a partial extraction stopped.
+    const status = error instanceof ChronicleError ? error.status : 502;
+    const type = error instanceof ChronicleError ? error.type : "https://chronicle.local/problems/llm-unavailable";
+    throw new ExtractionFailureError(error instanceof Error ? error.message : "LLM extraction failed.", capEvidence(partial), status, type);
   };
 
   // Phase 1: entity pass per chunk, schema stays small (one chunk's entities).
@@ -142,8 +195,8 @@ export const extractCandidates = async (text: string, client = getLlmClient(), o
     }
   }
 
-  return {
+  return capEvidence({
     entities,
     relationships: mergeRelationships(canonicalizeEndpoints(allRelationships, entities)),
-  };
+  });
 };

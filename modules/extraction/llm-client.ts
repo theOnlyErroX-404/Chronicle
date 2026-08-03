@@ -1,8 +1,12 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { config, type OpenAiEndpoint } from "@/lib/config";
+import { createLlmCache, llmCacheKey } from "@/modules/extraction/cache";
 import {
+  ENTITY_TYPE_VALUES,
   ExtractionEntitySchema,
   ExtractionRelationshipSchema,
+  RELATIONSHIP_TYPE_VALUES,
   type ExtractedEntity,
   type ExtractedRelationship,
 } from "@/modules/shared/contracts";
@@ -17,9 +21,6 @@ export interface LlmClient {
   extractRelationships(chunk: string, entities: ExtractedEntity[]): Promise<ExtractedRelationship[]>;
   checkHealth?(): Promise<void>;
 }
-
-const ENTITY_TYPE_ENUM = ["threat-actor", "malware", "tool", "web-shell", "vulnerability", "indicator", "sector", "country", "campaign", "email", "file-path"] as const;
-const RELATIONSHIP_TYPE_ENUM = ["uses", "exploits", "targets", "attributed-to", "communicates-with", "mitigated-by", "executes", "downloads", "delivers", "exfiltrates"] as const;
 
 // Two-pass extraction. A single combined schema was the reliable ceiling for a
 // 3B model (relationships referenced entities it never emitted, and it skipped
@@ -40,7 +41,7 @@ const entitiesSchema = {
         additionalProperties: false,
         required: ["type", "name", "confidence", "evidence"],
         properties: {
-          type: { type: "string", enum: ENTITY_TYPE_ENUM },
+          type: { type: "string", enum: ENTITY_TYPE_VALUES },
           name: { type: "string" }, confidence: { type: "number" }, evidence: { type: "string" },
           aliases: { type: "array", items: { type: "string" } },
         },
@@ -59,7 +60,7 @@ const relationshipItem = (names: string[]) => ({
     // big would make constrained decoding impractically slow.
     source: names.length <= MAX_ENUM_ENDPOINTS ? { type: "string", enum: names } : { type: "string" },
     target: names.length <= MAX_ENUM_ENDPOINTS ? { type: "string", enum: names } : { type: "string" },
-    type: { type: "string", enum: RELATIONSHIP_TYPE_ENUM },
+    type: { type: "string", enum: RELATIONSHIP_TYPE_VALUES },
     confidence: { type: "number" }, evidence: { type: "string" },
   },
 });
@@ -148,11 +149,15 @@ const parseRelationships = (payload: unknown): ExtractedRelationship[] => {
   }
 };
 
-type ChatFormat = "json" | object;
+// The OpenAI-compatible JSON-schema mode names the schema in its envelope, so
+// each format carries its name explicitly rather than being inferred from
+// object identity (which silently breaks if a schema is ever reused for the
+// other pass).
+type ChatFormat = "json" | { name: string; schema: object };
 type ChatFn = (messages: Array<{ role: string; content: string }>, format: ChatFormat) => Promise<unknown>;
 
 const runEntityPass = async (chat: ChatFn, chunk: string): Promise<ExtractedEntity[]> => {
-  const format: ChatFormat = config.extractionFormat === "schema" ? entitiesSchema : "json";
+  const format: ChatFormat = config.extractionFormat === "schema" ? { name: "entities", schema: entitiesSchema } : "json";
   return parseEntities(
     await chat([{ role: "system", content: systemPrompt }, { role: "user", content: entitiesGuidance(chunk) }], format),
   );
@@ -160,27 +165,75 @@ const runEntityPass = async (chat: ChatFn, chunk: string): Promise<ExtractedEnti
 
 const runRelationshipPass = async (chat: ChatFn, chunk: string, entities: ExtractedEntity[]): Promise<ExtractedRelationship[]> => {
   const names = [...new Set(entities.map((entity) => entity.name.trim()).filter(Boolean))];
-  const format: ChatFormat = config.extractionFormat === "schema" ? relationshipsSchema(names) : "json";
+  const format: ChatFormat = config.extractionFormat === "schema" ? { name: "relationships", schema: relationshipsSchema(names) } : "json";
   return parseRelationships(
     await chat([{ role: "system", content: systemPrompt }, { role: "user", content: relationshipsGuidance(chunk, entities) }], format),
   );
 };
+
+// Fingerprint of the prompts and schemas that shape a result. Part of the cache
+// key, so editing any prompt, example, or schema invalidates cached results and
+// a "run it again" after an iteration cannot serve stale output.
+const PROMPT_FINGERPRINT = createHash("sha256")
+  .update(
+    systemPrompt +
+      entitiesGuidance("") +
+      relationshipsGuidance("", []) +
+      JSON.stringify({ name: "entities", schema: entitiesSchema }) +
+      JSON.stringify({ name: "relationships", schema: relationshipsSchema([]) }),
+  )
+  .digest("hex")
+  .slice(0, 16);
+
+// Shared across client instances so a second report (or an eval re-run) hits
+// the same cache; the key already scopes results to provider, model, prompt,
+// pass, and chunk content.
+const llmCache = createLlmCache();
+
+// Test seam: the cache is shared module-wide by design, so suites that simulate
+// changing provider behavior must clear it between cases.
+export const resetLlmCache = (): void => {
+  llmCache.clear();
+};
+
+// Caches the validated result of each pass. Extraction is deterministic, so a
+// cache hit skips the LLM call entirely; only successfully validated results
+// are stored, never malformed or rate-limited attempts.
+abstract class BaseLlmClient implements LlmClient {
+  protected abstract readonly identity: string;
+  protected abstract chat(messages: Array<{ role: string; content: string }>, format: ChatFormat): Promise<unknown>;
+
+  async extractEntities(chunk: string): Promise<ExtractedEntity[]> {
+    const key = llmCacheKey([this.identity, PROMPT_FINGERPRINT, "entities", chunk]);
+    const hit = llmCache.get(key);
+    if (hit !== undefined) return hit as ExtractedEntity[];
+    const result = await runEntityPass((messages, format) => this.chat(messages, format), chunk);
+    llmCache.set(key, result);
+    return result;
+  }
+
+  async extractRelationships(chunk: string, entities: ExtractedEntity[]): Promise<ExtractedRelationship[]> {
+    // Key on the same trimmed names the relationship schema enum uses, so a
+    // cache hit cannot occur for a different (untrimmed) entity spelling.
+    const names = [...new Set(entities.map((entity) => `${entity.type}:${entity.name.trim()}`))].sort();
+    const key = llmCacheKey([this.identity, PROMPT_FINGERPRINT, "relationships", chunk, ...names]);
+    const hit = llmCache.get(key);
+    if (hit !== undefined) return hit as ExtractedRelationship[];
+    const result = await runRelationshipPass((messages, format) => this.chat(messages, format), chunk, entities);
+    llmCache.set(key, result);
+    return result;
+  }
+}
 
 const isTimeout = (error: unknown) => error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 const timeoutError = () => new ChronicleError("The LLM request timed out.", 504, "https://chronicle.local/problems/llm-timeout");
 
 const ollamaBase = () => config.ollamaBaseUrl.replace(/\/$/, "");
 
-export class OllamaLlmClient implements LlmClient {
-  async extractEntities(chunk: string): Promise<ExtractedEntity[]> {
-    return runEntityPass((messages, format) => this.chat(messages, format), chunk);
-  }
+export class OllamaLlmClient extends BaseLlmClient {
+  protected readonly identity = `ollama:${config.ollamaChatModel}`;
 
-  async extractRelationships(chunk: string, entities: ExtractedEntity[]): Promise<ExtractedRelationship[]> {
-    return runRelationshipPass((messages, format) => this.chat(messages, format), chunk, entities);
-  }
-
-  private async chat(messages: Array<{ role: string; content: string }>, format: ChatFormat): Promise<unknown> {
+  protected async chat(messages: Array<{ role: string; content: string }>, format: ChatFormat): Promise<unknown> {
     let response: Response;
     try {
       response = await fetch(`${ollamaBase()}/api/chat`, {
@@ -190,8 +243,9 @@ export class OllamaLlmClient implements LlmClient {
         body: JSON.stringify({
           model: config.ollamaChatModel,
           stream: false,
-          format,
-          options: { temperature: 0, num_predict: config.extractionMaxTokens, seed: 1337 },
+          format: format === "json" ? format : format.schema,
+          keep_alive: config.ollamaKeepAlive,
+          options: { temperature: 0, num_predict: config.extractionMaxTokens, num_ctx: config.ollamaNumCtx, seed: 1337 },
           messages,
         }),
       });
@@ -229,8 +283,6 @@ export class OllamaLlmClient implements LlmClient {
 
 const openaiBase = (endpoint: OpenAiEndpoint) => endpoint.baseUrl.replace(/\/$/, "");
 
-const schemaName = (format: ChatFormat) => (format === entitiesSchema ? "entities" : "relationships");
-
 const classifyOpenAiStatus = (status: number): ChronicleError => {
   if (status === 401 || status === 403) {
     return new ChronicleError("The LLM API key was rejected. Check OPENAI_API_KEY.", 401, "https://chronicle.local/problems/llm-auth");
@@ -245,33 +297,25 @@ const classifyOpenAiStatus = (status: number): ChronicleError => {
 // Gemini's OpenAI compatibility layer. The two-pass flow and JSON schemas are
 // identical to Ollama's; only the transport and the response_format wrapper
 // differ, so a report can switch providers with environment variables alone.
-export class OpenAiCompatibleLlmClient implements LlmClient {
+export class OpenAiCompatibleLlmClient extends BaseLlmClient {
   private readonly endpoint: OpenAiEndpoint;
 
-  // Defaults to the flat OPENAI_* config so the class stays constructible
-  // without arguments; the failover client always passes an explicit endpoint.
-  constructor(endpoint?: OpenAiEndpoint) {
-    this.endpoint = endpoint ?? {
-      baseUrl: config.openaiBaseUrl,
-      apiKey: config.openaiApiKey ?? "",
-      chatModel: config.openaiChatModel,
-      maxTokens: config.openaiMaxTokens,
-    };
+  // The endpoint is explicit so a client can never silently ride on possibly
+  // empty flat config; getLlmClient and the failover client always pass one.
+  constructor(endpoint: OpenAiEndpoint) {
+    super();
+    this.endpoint = endpoint;
   }
 
-  async extractEntities(chunk: string): Promise<ExtractedEntity[]> {
-    return runEntityPass((messages, format) => this.chat(messages, format), chunk);
+  protected get identity(): string {
+    return `openai:${this.endpoint.chatModel}`;
   }
 
-  async extractRelationships(chunk: string, entities: ExtractedEntity[]): Promise<ExtractedRelationship[]> {
-    return runRelationshipPass((messages, format) => this.chat(messages, format), chunk, entities);
-  }
-
-  private async chat(messages: Array<{ role: string; content: string }>, format: ChatFormat): Promise<unknown> {
+  protected async chat(messages: Array<{ role: string; content: string }>, format: ChatFormat): Promise<unknown> {
     const response_format =
       format === "json"
         ? { type: "json_object" }
-        : { type: "json_schema", json_schema: { name: schemaName(format), schema: format } };
+        : { type: "json_schema", json_schema: { name: format.name, schema: format.schema } };
     let response: Response;
     try {
       response = await fetch(`${openaiBase(this.endpoint)}/chat/completions`, {

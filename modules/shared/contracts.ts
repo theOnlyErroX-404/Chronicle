@@ -27,6 +27,12 @@ export const RelationshipTypeSchema = z.enum([
   "exfiltrates",
 ]);
 
+// Single source of truth for the allowed values: JSON-schema prompts, the
+// evaluation suite, and validation all derive from these, so adding a type in
+// one place can never silently drift from the others.
+export const ENTITY_TYPE_VALUES = EntityTypeSchema.options;
+export const RELATIONSHIP_TYPE_VALUES = RelationshipTypeSchema.options;
+
 export const ExtractionEntitySchema = z.object({
   type: EntityTypeSchema,
   name: z.string().min(1).max(300),
@@ -48,7 +54,9 @@ export const ExtractionRelationshipSchema = z.object({
   evidence: z.string().max(1_500),
 });
 
-export const ExtractionResultSchema = z.object({
+// Schema kept module-private: extraction validates via the two pass-only schemas
+// in llm-client.ts, so this aggregate is used purely for type inference.
+const ExtractionResultSchema = z.object({
   entities: z.array(ExtractionEntitySchema).max(250),
   relationships: z.array(ExtractionRelationshipSchema).max(500),
 });
@@ -79,7 +87,6 @@ export const GraphSchema = z.object({
 
 export type Graph = z.infer<typeof GraphSchema>;
 export type GraphNode = z.infer<typeof GraphNodeSchema>;
-export type GraphEdge = z.infer<typeof GraphEdgeSchema>;
 
 export const ReportStatusSchema = z.enum([
   "queued",
@@ -90,16 +97,3 @@ export const ReportStatusSchema = z.enum([
   "failed",
 ]);
 export type ReportStatus = z.infer<typeof ReportStatusSchema>;
-
-export const JobInfoSchema = z.object({
-  id: z.string(),
-  report_id: z.string(),
-  status: ReportStatusSchema,
-  progress: z.string().optional(),
-  partial: z.boolean().optional(),
-  error: z.string().optional(),
-  queue_position: z.number().int().min(0).optional(),
-  created_at: z.string(),
-  updated_at: z.string(),
-});
-export type JobInfo = z.infer<typeof JobInfoSchema>;

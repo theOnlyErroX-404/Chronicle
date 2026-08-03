@@ -1,3 +1,5 @@
+import { ChronicleError } from "@/modules/shared/errors";
+
 export const normalizeText = (source: string) =>
   source
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
@@ -10,6 +12,8 @@ export const normalizeText = (source: string) =>
     .trim();
 
 export const ensureUsableText = (text: string) => {
-  if (text.length < 100) throw new Error("The report did not contain enough extractable text.");
+  if (text.length < 100) {
+    throw new ChronicleError("The report did not contain enough extractable text.", 422, "https://chronicle.local/problems/insufficient-text");
+  }
   return text;
 };

@@ -1,4 +1,4 @@
-import { extractCandidates, ExtractionFailureError } from "@/modules/extraction";
+import { createCircuitBreaker, extractCandidates, ExtractionFailureError } from "@/modules/extraction";
 import { getLlmClient } from "@/modules/extraction/llm-client";
 import { ingestReport, type IngestionSource } from "@/modules/ingestion";
 import { buildGraph, buildStixLiteBundle, completeEntityEndpoints } from "@/modules/knowledge-modeling";
@@ -32,6 +32,10 @@ export const processReport = async (reportId: string, source: IngestionSource, o
 
     const extraction = await extractCandidates(rawText, client, {
       onProgress: ({ current, total }) => setProgress(`chunk ${current}/${total}`),
+      // One breaker per report, shared across both passes: after repeated
+      // consecutive failures the LLM server gets a cooldown instead of a
+      // sustained hammering from retries.
+      breaker: createCircuitBreaker(),
     });
     const completed = completeEntityEndpoints(extraction);
     reportStore.update(reportId, { extraction: completed, status: "modeling", progress: "modeling" });

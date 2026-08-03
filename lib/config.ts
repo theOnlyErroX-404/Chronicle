@@ -41,14 +41,15 @@ export const config = {
   llmProvider: process.env.LLM_PROVIDER ?? "ollama",
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? "http://127.0.0.1:11434",
   ollamaChatModel: process.env.OLLAMA_CHAT_MODEL ?? "qwen2.5:3b",
-  openaiBaseUrl: process.env.OPENAI_BASE_URL ?? "",
-  openaiApiKey: process.env.OPENAI_API_KEY,
+  // Keep the model warm between reports so a second report skips the load-in.
+  ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE ?? "30m",
+  // Small chunks need little context; cap it so memory stays bounded, but keep
+  // the default at 4096 — the two-pass system prompt plus JSON schema already
+  // consume over 2k tokens before any chunk text.
+  ollamaNumCtx: positiveInteger(process.env.OLLAMA_NUM_CTX, 4_096),
+  // Display name for the primary hosted model (used by the evaluation harness);
+  // the transport config lives in the ordered openAiEndpoints list below.
   openaiChatModel: process.env.OPENAI_CHAT_MODEL ?? "",
-  // Hosted providers are not CPU-bound, and free models tend to over-extract,
-  // so a large entity list easily exceeds the 2048 CPU-oriented ceiling (the
-  // response truncates and fails schema validation). Slightly larger budget,
-  // well under Gemini's 32k completion cap.
-  openaiMaxTokens: positiveInteger(process.env.OPENAI_MAX_TOKENS, 8_192),
   // Ordered endpoint list for the OpenAI-compatible provider. When an endpoint
   // rate-limits, rejects the key, or 5xxes, the client blackouts it for a
   // cooldown and continues with the next one, so one exhausted free tier does
@@ -57,11 +58,22 @@ export const config = {
   maxReportBytes: positiveInteger(process.env.MAX_REPORT_BYTES, MAX_REPORT_BYTES),
   urlFetchTimeoutMs: positiveInteger(process.env.URL_FETCH_TIMEOUT_MS, 15_000),
   maxRedirects: positiveInteger(process.env.MAX_REDIRECTS, 3),
+  // Untrusted PDFs parse inside a worker thread (bounded memory + wall-clock
+  // timeout), so a malicious file can only exhaust the worker, not the server.
+  pdfParseTimeoutMs: positiveInteger(process.env.PDF_PARSE_TIMEOUT_MS, 30_000),
+  // Bounded in-memory store: once the cap is hit, the oldest report that is not
+  // currently queued/processing is evicted so a long-running server never grows
+  // without bound. Active reports are never evicted.
+  reportStoreMaxItems: positiveInteger(process.env.REPORT_STORE_MAX_ITEMS, 100),
   // Extraction tuning. On CPU-only inference a 3B model is far slower than a
   // hosted API: chunks must stay small and per-call timeouts generous, and it
   // must stay under Ollama's ~5 minute server-side request cap.
   llmTimeoutMs: positiveInteger(process.env.LLM_TIMEOUT_MS, 180_000),
   extractionMaxChunkChars: positiveInteger(process.env.EXTRACTION_MAX_CHUNK_CHARS, 1_200),
+  // Hard ceiling on the report text fed to extraction. Every chunk costs two LLM
+  // calls, so an unbounded page would fan out into tens of thousands of requests;
+  // the tail of a huge report is truncated to keep the workload finite.
+  maxExtractedChars: positiveInteger(process.env.MAX_EXTRACTED_CHARS, 250_000),
   // Max completion tokens per LLM call; generous enough for a chunk's entity
   // list plus aliases and evidence, small enough to stay fast on CPU.
   extractionMaxTokens: positiveInteger(process.env.EXTRACTION_MAX_TOKENS, 2_048),

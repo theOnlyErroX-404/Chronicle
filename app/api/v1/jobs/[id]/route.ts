@@ -15,7 +15,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       progress: report.progress,
       partial: report.partial,
       error: report.errorMessage,
-      queue_position: report.status === "queued" ? jobQueue.pending() : undefined,
+      // queue_position counts the running job plus everything queued behind it,
+      // so a job right behind the one in flight reports position 1, not 0.
+      queue_position: report.status === "queued" ? jobQueue.pending() + (jobQueue.running() ? 1 : 0) : undefined,
       created_at: report.createdAt,
       updated_at: report.updatedAt,
     });

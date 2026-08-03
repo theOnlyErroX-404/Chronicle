@@ -35,6 +35,20 @@ describe("chunkReportText", () => {
   it("keeps short text as a single chunk", () => {
     expect(chunkReportText("Only one sentence here.", 120)).toEqual(["Only one sentence here."]);
   });
+
+  it("hard-splits a single sentence longer than the ceiling at word boundaries", () => {
+    const longSentence = `${"word ".repeat(60)}end.`;
+    const chunks = chunkReportText(longSentence, 120);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(120);
+    expect(chunks.join(" ").replace(/\s+/g, " ").trim()).toBe(longSentence.trim());
+  });
+
+  it("slices an unbroken token longer than the ceiling", () => {
+    const chunks = chunkReportText("x".repeat(500), 120);
+    expect(chunks.length).toBe(5);
+    for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(120);
+  });
 });
 
 describe("extractCandidates", () => {
@@ -48,7 +62,7 @@ describe("extractCandidates", () => {
   it("deduplicates the same entity extracted from multiple chunks", async () => {
     const c = client({ extractEntities: vi.fn(async () => [entity("APT41", "threat-actor")]) });
     const merged = await extractCandidates("First sentence. Second sentence.", c, { maxChars: 15 });
-    expect(vi.mocked(c.extractEntities)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(c.extractEntities)).toHaveBeenCalledTimes(3);
     expect(merged.entities).toHaveLength(1);
     expect(merged.entities[0].name).toBe("APT41");
   });
@@ -92,7 +106,7 @@ describe("extractCandidates", () => {
       extractRelationships: vi.fn(async () => [relationship("APT41", "EvilRAT")]),
     });
     const merged = await extractCandidates("First sentence. Second sentence.", c, { maxChars: 15 });
-    expect(vi.mocked(c.extractRelationships)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(c.extractRelationships)).toHaveBeenCalledTimes(3);
     expect(merged.relationships).toHaveLength(1);
   });
 
@@ -126,5 +140,15 @@ describe("extractCandidates", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("truncates evidence to 60 characters", async () => {
+    const c = client({
+      extractEntities: vi.fn(async () => [{ ...entity("EvilRAT"), evidence: "x".repeat(200) }]),
+      extractRelationships: vi.fn(async () => [{ ...relationship("APT41", "EvilRAT"), evidence: "y".repeat(200) }]),
+    });
+    const merged = await extractCandidates("Short text.", c);
+    expect(merged.entities[0].evidence).toHaveLength(60);
+    expect(merged.relationships[0].evidence).toHaveLength(60);
   });
 });

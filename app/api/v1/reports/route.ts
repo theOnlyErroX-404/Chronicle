@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { config } from "@/lib/config";
 import { processReport } from "@/modules/processing/process-report";
 import { jobQueue } from "@/modules/processing/queue";
@@ -7,23 +8,82 @@ import { reportStore } from "@/modules/shared/report-store";
 
 export const runtime = "nodejs";
 
+// Zod at the API boundary: request bodies are validated here so malformed
+// payloads fail fast with a 400 instead of surfacing deep inside ingestion.
+const jsonReportSchema = z.object({ url: z.url("Provide a valid report URL.") });
+const pdfUploadSchema = z.object({ file: z.instanceof(File) });
+
+const zodProblem = (error: unknown): ChronicleError =>
+  error instanceof z.ZodError
+    ? new ChronicleError(error.issues[0]?.message ?? "Invalid request.", 400)
+    : new ChronicleError("Invalid request.", 400);
+
+// Multipart framing (boundaries, headers) adds a little over the file's own
+// bytes, so the raw body may legitimately exceed maxReportBytes. Allow slack for
+// the envelope and enforce the real limit on the parsed file size below.
+const MULTIPART_FRAMING_SLACK = 256 * 1024;
+
+// Stream the raw request body with a running byte counter instead of letting
+// request.json()/formData() buffer it unboundedly first: an oversized body is
+// rejected at the byte that crosses the cap, so memory stays bounded.
+const readBodyWithLimit = async (request: Request, limit: number): Promise<Uint8Array<ArrayBuffer>> => {
+  const reader = request.body?.getReader();
+  if (!reader) return new Uint8Array();
+  const chunks: Uint8Array<ArrayBufferLike>[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel();
+      throw new ChronicleError("The request body exceeds the configured size limit.", 413);
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+};
+
 export async function POST(request: Request) {
   try {
     requireApiToken(request);
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
-      const body = (await request.json()) as { url?: unknown };
-      if (typeof body.url !== "string" || !body.url.trim()) throw new ChronicleError("Provide a non-empty report URL.");
-      const url = body.url;
+      const rawBody = await readBodyWithLimit(request, config.maxReportBytes);
+      let body: unknown;
+      try {
+        body = JSON.parse(new TextDecoder().decode(rawBody));
+      } catch {
+        throw new ChronicleError("The request body must be valid JSON.", 400);
+      }
+      const parsed = jsonReportSchema.safeParse(body);
+      if (!parsed.success) throw zodProblem(parsed.error);
+      const url = parsed.data.url;
       const report = reportStore.create({ sourceType: "url", sourceUrl: url });
       jobQueue.enqueue(() => processReport(report.id, { kind: "url", url }));
       return Response.json({ report_id: report.id, job_id: report.id, status: report.status }, { status: 202 });
     }
 
     if (!contentType.includes("multipart/form-data")) throw new ChronicleError("Submit either JSON { url } or multipart/form-data with a PDF file.", 415);
-    const formData = await request.formData();
-    const file = formData.get("file");
-    if (!(file instanceof File)) throw new ChronicleError("Attach a PDF using the file field.");
+    const rawBody = await readBodyWithLimit(request, config.maxReportBytes + MULTIPART_FRAMING_SLACK);
+    let formData: FormData;
+    try {
+      // The bytes are already bounded above, so re-parsing the buffered body is
+      // safe; this also turns a malformed multipart payload into a 400 instead
+      // of an unclassified error.
+      formData = await new Request(request.url, { method: "POST", headers: { "content-type": contentType }, body: rawBody }).formData();
+    } catch {
+      throw new ChronicleError("The request body must be valid multipart/form-data.", 400);
+    }
+    const parsed = pdfUploadSchema.safeParse({ file: formData.get("file") });
+    if (!parsed.success) throw zodProblem(parsed.error);
+    const file = parsed.data.file;
     if (file.size === 0 || file.size > config.maxReportBytes) throw new ChronicleError("The PDF exceeds the configured size limit.", 413);
     if (file.type && file.type !== "application/pdf") throw new ChronicleError("Only PDF uploads are accepted.", 415);
     const report = reportStore.create({ sourceType: "pdf", filename: file.name });

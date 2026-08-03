@@ -138,7 +138,14 @@ const retypeStrongPatterns = (entities: ExtractedEntity[]): ExtractedEntity[] =>
 // evidence-backed (the endpoint is mentioned in the text the relationship cites).
 export const completeEntityEndpoints = (extraction: ExtractionResult): ExtractionResult => {
   const entities = retypeStrongPatterns(extraction.entities);
-  const present = new Set(entities.map((entity) => normalizeName(entity.name)));
+  // Seed with canonical names AND aliases: a relationship endpoint may cite an
+  // alias, and without this the endpoint would be synthesized as a separate
+  // duplicate entity even though the aliased entity already exists.
+  const present = new Set<string>();
+  for (const entity of entities) {
+    present.add(normalizeName(entity.name));
+    for (const alias of entity.aliases ?? []) present.add(normalizeName(alias));
+  }
   const additions: ExtractedEntity[] = [];
   for (const relationship of extraction.relationships) {
     for (const endpoint of [relationship.source, relationship.target]) {
@@ -199,23 +206,32 @@ const stixTypeFor = (entity: GraphNode) => {
   if (entity.type === "tool" || entity.type === "web-shell") return "tool";
   if (entity.type === "vulnerability") return "vulnerability";
   if (entity.type === "indicator") return "indicator";
+  if (entity.type === "campaign") return "campaign";
   return "identity";
 };
 
 export const buildStixLiteBundle = (reportId: string, graph: Graph) => {
   const now = new Date().toISOString();
+  const stixIdByNode = new Map<string, string>();
+  for (const node of graph.nodes) {
+    const stixType = stixTypeFor(node);
+    stixIdByNode.set(node.id, `${stixType}--${node.id.split("--")[1]}`);
+  }
   const objects = [
-    ...graph.nodes.map((node) => ({
-      type: stixTypeFor(node),
-      spec_version: "2.1",
-      id: `${stixTypeFor(node)}--${node.id.split("--")[1]}`,
-      created: now,
-      modified: now,
-      name: node.name,
-      confidence: Math.round(node.confidence * 100),
-      labels: [node.type],
-      x_chronicle_report_id: reportId,
-    })),
+    ...graph.nodes.map((node) => {
+      const stixType = stixTypeFor(node);
+      return {
+        type: stixType,
+        spec_version: "2.1",
+        id: stixIdByNode.get(node.id),
+        created: now,
+        modified: now,
+        name: node.name,
+        confidence: Math.round(node.confidence * 100),
+        labels: [node.type],
+        x_chronicle_report_id: reportId,
+      };
+    }),
     ...graph.edges.map((edge) => ({
       type: "relationship",
       spec_version: "2.1",
@@ -223,8 +239,8 @@ export const buildStixLiteBundle = (reportId: string, graph: Graph) => {
       created: now,
       modified: now,
       relationship_type: edge.type,
-      source_ref: graph.nodes.find((node) => node.id === edge.source) && `${stixTypeFor(graph.nodes.find((node) => node.id === edge.source)!)}--${edge.source.split("--")[1]}`,
-      target_ref: graph.nodes.find((node) => node.id === edge.target) && `${stixTypeFor(graph.nodes.find((node) => node.id === edge.target)!)}--${edge.target.split("--")[1]}`,
+      source_ref: stixIdByNode.get(edge.source),
+      target_ref: stixIdByNode.get(edge.target),
       confidence: Math.round(edge.confidence * 100),
       x_chronicle_report_id: reportId,
     })),

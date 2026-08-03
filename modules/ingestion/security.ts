@@ -43,7 +43,18 @@ const isPrivateIpv6 = (ip: string) => {
 
 export type HostResolver = (hostname: string) => Promise<LookupAddress[]>;
 
-export const assertSafePublicUrl = async (rawUrl: string, resolveHost: HostResolver = (hostname) => lookup(hostname, { all: true, verbatim: true })) => {
+const defaultResolver: HostResolver = (hostname) => lookup(hostname, { all: true, verbatim: true });
+
+// A URL plus the exact addresses the hostname resolved to after the public-IP
+// check passed. The fetch layer connects to these addresses and never performs
+// its own DNS lookup, so a DNS rebinding between validation and connect cannot
+// redirect the request at a private address.
+export type SafePublicUrl = {
+  url: URL;
+  addresses: LookupAddress[];
+};
+
+export const resolveSafePublicUrl = async (rawUrl: string, resolveHost: HostResolver = defaultResolver): Promise<SafePublicUrl> => {
   let url: URL;
   try {
     url = new URL(rawUrl);
@@ -64,12 +75,14 @@ export const assertSafePublicUrl = async (rawUrl: string, resolveHost: HostResol
   const family = isIP(hostname);
   if (family) {
     if (family === 4 ? isPrivateIpv4(hostname) : isPrivateIpv6(hostname)) rejectUnsafe();
-    return url;
+    return { url, addresses: [{ address: hostname, family }] };
   }
 
   const addresses = await resolveHost(hostname).catch(() => {
     throw new ChronicleError("The report host could not be resolved.");
   });
   if (!addresses.length || addresses.some(({ address, family: resolvedFamily }) => (resolvedFamily === 4 ? isPrivateIpv4(address) : isPrivateIpv6(address)))) rejectUnsafe();
-  return url;
+  return { url, addresses };
 };
+
+export const assertSafePublicUrl = async (rawUrl: string, resolveHost?: HostResolver): Promise<URL> => (await resolveSafePublicUrl(rawUrl, resolveHost)).url;

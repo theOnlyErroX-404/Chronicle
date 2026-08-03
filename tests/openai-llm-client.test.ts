@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { OpenAiCompatibleLlmClient } from "@/modules/extraction/llm-client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { OpenAiCompatibleLlmClient, resetLlmCache } from "@/modules/extraction/llm-client";
 import type { ExtractedEntity } from "@/modules/shared/contracts";
 
 const completionsResponse = (content: unknown) =>
@@ -9,7 +9,13 @@ const statusResponse = (status: number) => ({ ok: false, status }) as unknown as
 
 const entity = (name: string): ExtractedEntity => ({ type: "malware", name, confidence: 1, evidence: name });
 
+const testEndpoint = { baseUrl: "https://example.test", apiKey: "test-key", chatModel: "model", maxTokens: 8192 };
+
 describe("OpenAiCompatibleLlmClient extraction passes", () => {
+  beforeEach(() => {
+    resetLlmCache();
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -25,7 +31,7 @@ describe("OpenAiCompatibleLlmClient extraction passes", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const client = new OpenAiCompatibleLlmClient({ baseUrl: "https://example.test", apiKey: "test-key", chatModel: "model", maxTokens: 8192 });
+    const client = new OpenAiCompatibleLlmClient(testEndpoint);
     const entities = await client.extractEntities("APT29 used SLUI.");
     const relationships = await client.extractRelationships("APT29 used SLUI.", entities);
 
@@ -53,7 +59,7 @@ describe("OpenAiCompatibleLlmClient extraction passes", () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(completionsResponse({ relationships: [] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await new OpenAiCompatibleLlmClient().extractRelationships("chunk text", [entity("APT41"), entity("BEACON")]);
+    await new OpenAiCompatibleLlmClient(testEndpoint).extractRelationships("chunk text", [entity("APT41"), entity("BEACON")]);
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.response_format.json_schema.schema.properties.relationships.items.properties.source.enum).toEqual(["APT41", "BEACON"]);
@@ -62,16 +68,34 @@ describe("OpenAiCompatibleLlmClient extraction passes", () => {
   it("classifies a rejected API key as a 401 llm-auth", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(statusResponse(401)));
 
-    await expect(new OpenAiCompatibleLlmClient().extractEntities("X.")).rejects.toMatchObject({
+    await expect(new OpenAiCompatibleLlmClient(testEndpoint).extractEntities("X.")).rejects.toMatchObject({
       status: 401,
       type: "https://chronicle.local/problems/llm-auth",
+    });
+  });
+
+  it("classifies a forbidden key (403) as a 401 llm-auth", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(statusResponse(403)));
+
+    await expect(new OpenAiCompatibleLlmClient(testEndpoint).extractEntities("X.")).rejects.toMatchObject({
+      status: 401,
+      type: "https://chronicle.local/problems/llm-auth",
+    });
+  });
+
+  it("classifies an upstream 5xx as a 502 llm-upstream", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(statusResponse(503)));
+
+    await expect(new OpenAiCompatibleLlmClient(testEndpoint).extractEntities("X.")).rejects.toMatchObject({
+      status: 502,
+      type: "https://chronicle.local/problems/llm-upstream",
     });
   });
 
   it("classifies a rate limit as a 429 llm-rate-limit", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(statusResponse(429)));
 
-    await expect(new OpenAiCompatibleLlmClient().extractEntities("X.")).rejects.toMatchObject({
+    await expect(new OpenAiCompatibleLlmClient(testEndpoint).extractEntities("X.")).rejects.toMatchObject({
       status: 429,
       type: "https://chronicle.local/problems/llm-rate-limit",
     });
@@ -83,7 +107,7 @@ describe("OpenAiCompatibleLlmClient extraction passes", () => {
       vi.fn().mockResolvedValueOnce(completionsResponse({ entities: [{ type: "not-a-type", name: "X", confidence: 9, evidence: "" }] })),
     );
 
-    await expect(new OpenAiCompatibleLlmClient().extractEntities("X.")).rejects.toMatchObject({
+    await expect(new OpenAiCompatibleLlmClient(testEndpoint).extractEntities("X.")).rejects.toMatchObject({
       status: 502,
       type: "https://chronicle.local/problems/invalid-llm-output",
     });
@@ -94,7 +118,7 @@ describe("OpenAiCompatibleLlmClient extraction passes", () => {
     timeout.name = "AbortError";
     vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(timeout));
 
-    await expect(new OpenAiCompatibleLlmClient().extractEntities("X.")).rejects.toMatchObject({
+    await expect(new OpenAiCompatibleLlmClient(testEndpoint).extractEntities("X.")).rejects.toMatchObject({
       status: 504,
       type: "https://chronicle.local/problems/llm-timeout",
     });
@@ -104,7 +128,7 @@ describe("OpenAiCompatibleLlmClient extraction passes", () => {
     const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ data: [] }), status: 200 } as unknown as Response);
     vi.stubGlobal("fetch", fetchMock);
 
-    await new OpenAiCompatibleLlmClient().checkHealth?.();
+    await new OpenAiCompatibleLlmClient(testEndpoint).checkHealth?.();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0][0])).toContain("/models");

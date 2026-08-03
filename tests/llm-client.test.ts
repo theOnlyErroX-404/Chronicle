@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { OllamaLlmClient } from "@/modules/extraction/llm-client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { OllamaLlmClient, resetLlmCache } from "@/modules/extraction/llm-client";
 import type { ExtractedEntity } from "@/modules/shared/contracts";
 
 const jsonResponse = (content: unknown) =>
@@ -8,6 +8,10 @@ const jsonResponse = (content: unknown) =>
 const entity = (name: string): ExtractedEntity => ({ type: "malware", name, confidence: 1, evidence: name });
 
 describe("OllamaLlmClient extraction passes", () => {
+  beforeEach(() => {
+    resetLlmCache();
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -66,6 +70,29 @@ describe("OllamaLlmClient extraction passes", () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(body.format.properties.relationships.items.properties.source.enum).toEqual(["APT41", "BEACON"]);
+  });
+
+  it("keeps the model warm and bounds context via keep_alive and num_ctx", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ entities: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new OllamaLlmClient().extractEntities("chunk text");
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.keep_alive).toBe("30m");
+    expect(body.options.num_ctx).toBe(4096);
+    expect(body.options.num_predict).toBe(2048);
+  });
+
+  it("serves an identical repeat pass from the cache without calling the model again", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ entities: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OllamaLlmClient();
+    await client.extractEntities("Cache me.");
+    await client.extractEntities("Cache me.");
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("classifies invalid entity output as a 502 invalid-llm-output", async () => {

@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { FailoverLlmClient } from "@/modules/extraction/llm-client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FailoverLlmClient, resetLlmCache } from "@/modules/extraction/llm-client";
 import type { OpenAiEndpoint } from "@/lib/config";
 
 const completionsResponse = (content: unknown) =>
@@ -21,6 +21,10 @@ const byUrl = (calls: ReturnType<typeof vi.fn>["mock"]["calls"]) => (baseUrl: st
   calls.filter(([request]) => String(request).includes(baseUrl)).length;
 
 describe("FailoverLlmClient", () => {
+  beforeEach(() => {
+    resetLlmCache();
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
@@ -63,6 +67,34 @@ describe("FailoverLlmClient", () => {
     const count = byUrl(fetchMock.mock.calls);
     expect(count("a.example")).toBe(2); // probed twice, then not again within 30 min
     expect(count("b.example")).toBe(3);
+  });
+
+  it("fails over to the next endpoint on a rejected API key (401)", async () => {
+    const fetchMock = vi.fn(async (request: Request | string) =>
+      String(request).includes("a.example") ? statusResponse(401) : completionsResponse(entities),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FailoverLlmClient([endpoint("https://a.example"), endpoint("https://b.example")]);
+    await client.extractEntities("APT41.");
+
+    const count = byUrl(fetchMock.mock.calls);
+    expect(count("a.example")).toBe(1); // 401 -> 30 min blackout
+    expect(count("b.example")).toBe(1);
+  });
+
+  it("fails over to the next endpoint on an upstream 5xx", async () => {
+    const fetchMock = vi.fn(async (request: Request | string) =>
+      String(request).includes("a.example") ? statusResponse(503) : completionsResponse(entities),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FailoverLlmClient([endpoint("https://a.example"), endpoint("https://b.example")]);
+    await client.extractEntities("APT41.");
+
+    const count = byUrl(fetchMock.mock.calls);
+    expect(count("a.example")).toBe(1); // 5xx -> short blackout
+    expect(count("b.example")).toBe(1);
   });
 
   it("propagates the last error when every endpoint fails", async () => {
