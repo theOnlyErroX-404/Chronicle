@@ -1,0 +1,12 @@
+node_modules/
+.next/
+coverage/
+.env
+.env.*.local
+*.log
+*.tsbuildinfo
+.DS_Store
+uploads/
+
+PLAN.md
+session-ses_*.md
