@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OpenAiCompatibleLlmClient } from "@/modules/extraction/llm-client";
+import type { ExtractedEntity } from "@/modules/shared/contracts";
 
 const completionsResponse = (content: unknown) =>
   ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(content) } }] }) }) as unknown as Response;
 
 const statusResponse = (status: number) => ({ ok: false, status }) as unknown as Response;
 
-describe("OpenAiCompatibleLlmClient two-pass extraction", () => {
+const entity = (name: string): ExtractedEntity => ({ type: "malware", name, confidence: 1, evidence: name });
+
+describe("OpenAiCompatibleLlmClient extraction passes", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -22,7 +25,9 @@ describe("OpenAiCompatibleLlmClient two-pass extraction", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await new OpenAiCompatibleLlmClient().extract("APT29 used SLUI.");
+    const client = new OpenAiCompatibleLlmClient();
+    const entities = await client.extractEntities("APT29 used SLUI.");
+    const relationships = await client.extractRelationships("APT29 used SLUI.", entities);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [request] = fetchMock.mock.calls[0];
@@ -36,27 +41,28 @@ describe("OpenAiCompatibleLlmClient two-pass extraction", () => {
     expect(firstBody.response_format.json_schema.name).toBe("entities");
     expect(firstBody.response_format.json_schema.schema.properties.entities).toBeDefined();
     expect(firstBody.temperature).toBe(0);
+    expect(firstBody.max_tokens).toBe(8192);
 
     const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body as string);
     expect(secondBody.response_format.json_schema.name).toBe("relationships");
     expect(secondBody.response_format.json_schema.schema.properties.relationships.items.properties.source.enum).toEqual(["APT29"]);
-    expect(result.relationships).toHaveLength(1);
+    expect(relationships).toHaveLength(1);
   });
 
-  it("skips the relationships pass when no entities were extracted", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(completionsResponse({ entities: [] }));
+  it("passes the full merged entity set to the relationship pass schema enum", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(completionsResponse({ relationships: [] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await new OpenAiCompatibleLlmClient().extract("No facts here.");
+    await new OpenAiCompatibleLlmClient().extractRelationships("chunk text", [entity("APT41"), entity("BEACON")]);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(result.relationships).toEqual([]);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.response_format.json_schema.schema.properties.relationships.items.properties.source.enum).toEqual(["APT41", "BEACON"]);
   });
 
   it("classifies a rejected API key as a 401 llm-auth", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(statusResponse(401)));
 
-    await expect(new OpenAiCompatibleLlmClient().extract("X.")).rejects.toMatchObject({
+    await expect(new OpenAiCompatibleLlmClient().extractEntities("X.")).rejects.toMatchObject({
       status: 401,
       type: "https://chronicle.local/problems/llm-auth",
     });
@@ -65,7 +71,7 @@ describe("OpenAiCompatibleLlmClient two-pass extraction", () => {
   it("classifies a rate limit as a 429 llm-rate-limit", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(statusResponse(429)));
 
-    await expect(new OpenAiCompatibleLlmClient().extract("X.")).rejects.toMatchObject({
+    await expect(new OpenAiCompatibleLlmClient().extractEntities("X.")).rejects.toMatchObject({
       status: 429,
       type: "https://chronicle.local/problems/llm-rate-limit",
     });
@@ -77,7 +83,7 @@ describe("OpenAiCompatibleLlmClient two-pass extraction", () => {
       vi.fn().mockResolvedValueOnce(completionsResponse({ entities: [{ type: "not-a-type", name: "X", confidence: 9, evidence: "" }] })),
     );
 
-    await expect(new OpenAiCompatibleLlmClient().extract("X.")).rejects.toMatchObject({
+    await expect(new OpenAiCompatibleLlmClient().extractEntities("X.")).rejects.toMatchObject({
       status: 502,
       type: "https://chronicle.local/problems/invalid-llm-output",
     });
@@ -88,7 +94,7 @@ describe("OpenAiCompatibleLlmClient two-pass extraction", () => {
     timeout.name = "AbortError";
     vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(timeout));
 
-    await expect(new OpenAiCompatibleLlmClient().extract("X.")).rejects.toMatchObject({
+    await expect(new OpenAiCompatibleLlmClient().extractEntities("X.")).rejects.toMatchObject({
       status: 504,
       type: "https://chronicle.local/problems/llm-timeout",
     });

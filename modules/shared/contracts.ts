@@ -4,6 +4,7 @@ export const EntityTypeSchema = z.enum([
   "threat-actor",
   "malware",
   "tool",
+  "web-shell",
   "vulnerability",
   "indicator",
   "sector",
@@ -20,6 +21,10 @@ export const RelationshipTypeSchema = z.enum([
   "attributed-to",
   "communicates-with",
   "mitigated-by",
+  "executes",
+  "downloads",
+  "delivers",
+  "exfiltrates",
 ]);
 
 export const ExtractionEntitySchema = z.object({

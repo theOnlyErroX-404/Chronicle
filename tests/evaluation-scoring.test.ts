@@ -148,10 +148,10 @@ describe("evaluation scoring", () => {
       expect(report.id).toMatch(/^[a-z0-9-]+$/);
       expect(report.entities.length).toBeGreaterThan(0);
       for (const entityItem of report.entities) {
-        expect(["threat-actor", "malware", "tool", "vulnerability", "indicator", "sector", "country", "campaign", "email", "file-path"]).toContain(entityItem.type);
+        expect(["threat-actor", "malware", "tool", "web-shell", "vulnerability", "indicator", "sector", "country", "campaign", "email", "file-path"]).toContain(entityItem.type);
       }
       for (const rel of report.relationships) {
-        expect(["uses", "exploits", "targets", "attributed-to", "communicates-with", "mitigated-by"]).toContain(rel.type);
+        expect(["uses", "exploits", "targets", "attributed-to", "communicates-with", "mitigated-by", "executes", "downloads", "delivers", "exfiltrates"]).toContain(rel.type);
       }
     }
   });

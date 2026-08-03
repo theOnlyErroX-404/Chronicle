@@ -22,25 +22,25 @@ describe("OllamaLlmClient error classification", () => {
   it("classifies a timeout as 504 (llm-timeout)", async () => {
     mockFetch(() => Promise.reject(new DOMException("timeout", "TimeoutError")));
     const client = new OllamaLlmClient();
-    await expect(client.extract("text")).rejects.toMatchObject({ status: 504, type: "https://chronicle.local/problems/llm-timeout" });
+    await expect(client.extractEntities("text")).rejects.toMatchObject({ status: 504, type: "https://chronicle.local/problems/llm-timeout" });
   });
 
   it("classifies a connection failure as 503 (llm-unavailable)", async () => {
     mockFetch(() => Promise.reject(new TypeError("fetch failed")));
     const client = new OllamaLlmClient();
-    await expect(client.extract("text")).rejects.toMatchObject({ status: 503, type: "https://chronicle.local/problems/llm-unavailable" });
+    await expect(client.extractEntities("text")).rejects.toMatchObject({ status: 503, type: "https://chronicle.local/problems/llm-unavailable" });
   });
 
   it("classifies an HTTP error as 503", async () => {
     mockFetch(() => Promise.resolve(new Response("err", { status: 500 })));
     const client = new OllamaLlmClient();
-    await expect(client.extract("text")).rejects.toMatchObject({ status: 503 });
+    await expect(client.extractEntities("text")).rejects.toMatchObject({ status: 503 });
   });
 
   it("classifies invalid output as 502 (invalid-llm-output)", async () => {
     mockFetch(() => Promise.resolve(new Response(JSON.stringify({ message: { content: "not json" } }), { status: 200 })));
     const client = new OllamaLlmClient();
-    await expect(client.extract("text")).rejects.toMatchObject({ status: 502, type: "https://chronicle.local/problems/invalid-llm-output" });
+    await expect(client.extractEntities("text")).rejects.toMatchObject({ status: 502, type: "https://chronicle.local/problems/invalid-llm-output" });
   });
 
   it("health check flags a missing model as 503 (llm-model-missing)", async () => {
@@ -89,11 +89,12 @@ describe("extractCandidates partial failure", () => {
   it("surfaces accumulated results as an ExtractionFailureError when a chunk fails", async () => {
     let call = 0;
     const client = {
-      extract: vi.fn(async () => {
+      extractEntities: vi.fn(async () => {
         call += 1;
-        if (call === 1) return sample;
+        if (call === 1) return sample.entities;
         throw new ChronicleError("Ollama returned HTTP 500.", 503, "https://chronicle.local/problems/llm-unavailable");
       }),
+      extractRelationships: vi.fn(async () => []),
     };
     const progress: Array<{ current: number; total: number }> = [];
     const promise = extractCandidates("First chunk. Second chunk.", client, {
@@ -106,16 +107,17 @@ describe("extractCandidates partial failure", () => {
       expect(error.partial.entities).toHaveLength(1);
       expect(error.partial.entities[0].name).toBe("EvilBoat");
     });
-    expect(progress).toEqual([{ current: 1, total: 2 }, { current: 2, total: 2 }]);
+    expect(progress).toEqual([{ current: 1, total: 4 }, { current: 2, total: 4 }]);
   });
 
   it("does not call the client while the breaker is open", async () => {
-    const client = { extract: vi.fn(async () => sample) };
+    const client = { extractEntities: vi.fn(async () => sample.entities), extractRelationships: vi.fn(async () => []) };
     const breaker = createCircuitBreaker(2, 60_000);
     breaker.recordFailure();
     breaker.recordFailure();
     await expect(extractCandidates("text", client, { breaker })).rejects.toBeInstanceOf(ChronicleError);
-    expect(client.extract).not.toHaveBeenCalled();
+    expect(client.extractEntities).not.toHaveBeenCalled();
+    expect(client.extractRelationships).not.toHaveBeenCalled();
   });
 });
 

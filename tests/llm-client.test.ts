@@ -1,15 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OllamaLlmClient } from "@/modules/extraction/llm-client";
+import type { ExtractedEntity } from "@/modules/shared/contracts";
 
 const jsonResponse = (content: unknown) =>
   ({ ok: true, json: async () => ({ message: { content: JSON.stringify(content) } }) }) as unknown as Response;
 
-describe("OllamaLlmClient two-pass extraction", () => {
+const entity = (name: string): ExtractedEntity => ({ type: "malware", name, confidence: 1, evidence: name });
+
+describe("OllamaLlmClient extraction passes", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("performs an entities pass then a relationships pass and merges the results", async () => {
+  it("performs an entities pass then a relationships pass and returns their results", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -20,34 +23,33 @@ describe("OllamaLlmClient two-pass extraction", () => {
           ],
         }),
       )
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          message: {
-            content: JSON.stringify({
-              relationships: [{ source: "APT29", target: "SLUI", type: "uses", confidence: 1, evidence: "used SLUI" }],
-            }),
-          },
+      .mockResolvedValueOnce(
+        jsonResponse({
+          relationships: [{ source: "APT29", target: "SLUI", type: "uses", confidence: 1, evidence: "used SLUI" }],
         }),
-      });
+      );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await new OllamaLlmClient().extract("APT29 used SLUI.");
+    const client = new OllamaLlmClient();
+    const entities = await client.extractEntities("APT29 used SLUI.");
+    const relationships = await client.extractRelationships("APT29 used SLUI.", entities);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(result.entities).toHaveLength(2);
-    expect(result.relationships).toHaveLength(1);
-    expect(result.relationships[0]).toMatchObject({ source: "APT29", target: "SLUI", type: "uses" });
+    expect(entities).toHaveLength(2);
+    expect(relationships).toHaveLength(1);
+    expect(relationships[0]).toMatchObject({ source: "APT29", target: "SLUI", type: "uses" });
   });
 
-  it("constrains relationship endpoints to extracted entity names via the schema enum", async () => {
+  it("constrains relationship endpoints to the supplied entity names via the schema enum", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse({ entities: [{ type: "malware", name: "EvilRAT", confidence: 1, evidence: "EvilRAT" }] }))
+      .mockResolvedValueOnce(jsonResponse({ entities: [entity("EvilRAT")] }))
       .mockResolvedValueOnce(jsonResponse({ relationships: [] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await new OllamaLlmClient().extract("EvilRAT spreads.");
+    const client = new OllamaLlmClient();
+    const entities = await client.extractEntities("EvilRAT spreads.");
+    await client.extractRelationships("EvilRAT spreads.", entities);
 
     const relationshipRequest = fetchMock.mock.calls[1];
     const body = JSON.parse(relationshipRequest[1].body as string);
@@ -55,21 +57,22 @@ describe("OllamaLlmClient two-pass extraction", () => {
     expect(body.format.properties.relationships.items.properties.target.enum).toEqual(["EvilRAT"]);
   });
 
-  it("skips the relationships pass when no entities were extracted", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ entities: [] }));
+  it("passes the full merged entity set so cross-chunk endpoints are expressible", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ relationships: [] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await new OllamaLlmClient().extract("No facts here.");
+    const entities = [entity("APT41"), entity("BEACON")];
+    await new OllamaLlmClient().extractRelationships("chunk text", entities);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(result.relationships).toEqual([]);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.format.properties.relationships.items.properties.source.enum).toEqual(["APT41", "BEACON"]);
   });
 
   it("classifies invalid entity output as a 502 invalid-llm-output", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ entities: [{ type: "not-a-type", name: "X", confidence: 9, evidence: "" }] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(new OllamaLlmClient().extract("X.")).rejects.toMatchObject({
+    await expect(new OllamaLlmClient().extractEntities("X.")).rejects.toMatchObject({
       name: "ChronicleError",
       status: 502,
       type: "https://chronicle.local/problems/invalid-llm-output",
@@ -77,13 +80,10 @@ describe("OllamaLlmClient two-pass extraction", () => {
   });
 
   it("classifies invalid relationship output as a 502 invalid-llm-output", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ entities: [{ type: "malware", name: "X", confidence: 1, evidence: "X" }] }))
-      .mockResolvedValueOnce(jsonResponse({ relationships: [{ source: "X", target: "X", type: "wrong-type", confidence: 1, evidence: "" }] }));
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ relationships: [{ source: "X", target: "X", type: "wrong-type", confidence: 1, evidence: "" }] }));
     vi.stubGlobal("fetch", fetchMock);
 
-    await expect(new OllamaLlmClient().extract("X.")).rejects.toMatchObject({
+    await expect(new OllamaLlmClient().extractRelationships("X.", [])).rejects.toMatchObject({
       name: "ChronicleError",
       status: 502,
       type: "https://chronicle.local/problems/invalid-llm-output",
@@ -95,7 +95,7 @@ describe("OllamaLlmClient two-pass extraction", () => {
     timeout.name = "AbortError";
     vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(timeout));
 
-    await expect(new OllamaLlmClient().extract("X.")).rejects.toMatchObject({
+    await expect(new OllamaLlmClient().extractEntities("X.")).rejects.toMatchObject({
       status: 504,
       type: "https://chronicle.local/problems/llm-timeout",
     });

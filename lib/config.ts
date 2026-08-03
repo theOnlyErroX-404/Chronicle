@@ -16,6 +16,11 @@ export const config = {
   openaiBaseUrl: process.env.OPENAI_BASE_URL ?? "",
   openaiApiKey: process.env.OPENAI_API_KEY,
   openaiChatModel: process.env.OPENAI_CHAT_MODEL ?? "",
+  // Hosted providers are not CPU-bound, and free models tend to over-extract,
+  // so a large entity list easily exceeds the 2048 CPU-oriented ceiling (the
+  // response truncates and fails schema validation). Slightly larger budget,
+  // well under Gemini's 32k completion cap.
+  openaiMaxTokens: positiveInteger(process.env.OPENAI_MAX_TOKENS, 8_192),
   maxReportBytes: positiveInteger(process.env.MAX_REPORT_BYTES, MAX_REPORT_BYTES),
   urlFetchTimeoutMs: positiveInteger(process.env.URL_FETCH_TIMEOUT_MS, 15_000),
   maxRedirects: positiveInteger(process.env.MAX_REDIRECTS, 3),

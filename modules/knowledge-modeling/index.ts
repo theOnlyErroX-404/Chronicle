@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { isIP } from "node:net";
-import type { ExtractedEntity, ExtractionResult, Graph, GraphNode } from "@/modules/shared/contracts";
+import type { ExtractedEntity, ExtractedRelationship, ExtractionResult, Graph, GraphNode } from "@/modules/shared/contracts";
 
 export const normalizeName = (value: string) =>
   value
@@ -44,7 +44,12 @@ class NameUnionFind {
 
 const entityKey = (entity: Pick<ExtractedEntity, "type" | "name">) => `${entity.type}:${normalizeName(entity.name)}`;
 
-const resolveEntities = (entities: ExtractedEntity[]) => {
+// Cross-chunk merge: entities that share a normalized name or an alias collapse
+// into one canonical entry (highest confidence, longest name wins). Duplicate
+// entities emitted per chunk become a single record before the relationship
+// pass, so a link between entities mentioned in different chunks is expressible.
+export const mergeExtractedEntities = (entities: ExtractedEntity[]): ExtractedEntity[] => {
+  if (entities.length === 0) return [];
   const unionFind = new NameUnionFind();
   const keys: string[] = [];
   for (const entity of entities) {
@@ -66,18 +71,34 @@ const resolveEntities = (entities: ExtractedEntity[]) => {
     groups.set(root, members);
   }
 
-  const resolved = new Map<string, ResolvedEntity>();
-  const nameIndex = new Map<string, string>();
-  for (const [root, members] of groups) {
+  const merged: ExtractedEntity[] = [];
+  for (const members of groups.values()) {
     const canonical = members.reduce<ExtractedEntity>((best, member) => {
       if (member.confidence > best.confidence) return member;
       if (member.confidence === best.confidence && member.name.length > best.name.length) return member;
       return best;
     }, members[0]);
-    const id = nodeId(canonical.type, canonical.name);
-    resolved.set(root, { ...canonical, id });
-    nameIndex.set(normalizeName(canonical.name), id);
-    for (const alias of canonical.aliases ?? []) nameIndex.set(normalizeName(alias), id);
+    const aliasNames = new Set<string>();
+    for (const member of members) {
+      for (const alias of member.aliases ?? []) {
+        if (normalizeName(alias) !== normalizeName(canonical.name)) aliasNames.add(alias);
+      }
+      if (member !== canonical && normalizeName(member.name) !== normalizeName(canonical.name)) aliasNames.add(member.name);
+    }
+    merged.push({ ...canonical, aliases: aliasNames.size > 0 ? [...aliasNames] : canonical.aliases });
+  }
+  return merged;
+};
+
+const resolveEntities = (entities: ExtractedEntity[]) => {
+  const merged = mergeExtractedEntities(entities);
+  const resolved = new Map<string, ResolvedEntity>();
+  const nameIndex = new Map<string, string>();
+  for (const entity of merged) {
+    const id = nodeId(entity.type, entity.name);
+    resolved.set(entityKey(entity), { ...entity, id });
+    nameIndex.set(normalizeName(entity.name), id);
+    for (const alias of entity.aliases ?? []) nameIndex.set(normalizeName(alias), id);
   }
   return { entities: [...resolved.values()], nameIndex };
 };
@@ -130,6 +151,36 @@ export const completeEntityEndpoints = (extraction: ExtractionResult): Extractio
   return { entities: [...entities, ...additions], relationships: extraction.relationships };
 };
 
+// The relationship pass runs once per chunk, so the same edge is often emitted
+// several times (same endpoints, same type). Collapse duplicates, keeping the
+// most confident occurrence.
+export const mergeRelationships = (relationships: ExtractedRelationship[]): ExtractedRelationship[] => {
+  const best = new Map<string, ExtractedRelationship>();
+  for (const relationship of relationships) {
+    const key = `${normalizeName(relationship.source)}|${relationship.type}|${normalizeName(relationship.target)}`;
+    const existing = best.get(key);
+    if (!existing || relationship.confidence > existing.confidence) best.set(key, relationship);
+  }
+  return [...best.values()];
+};
+
+// Relationship endpoints often reference an entity by a name or alias variant
+// that differs from the canonical name chosen during merging. Rewrite each
+// endpoint to the canonical name so stored relationships point at the exact
+// entity records that exist.
+export const canonicalizeEndpoints = (relationships: ExtractedRelationship[], entities: ExtractedEntity[]): ExtractedRelationship[] => {
+  const canonicalByName = new Map<string, string>();
+  for (const entity of entities) {
+    canonicalByName.set(normalizeName(entity.name), entity.name);
+    for (const alias of entity.aliases ?? []) canonicalByName.set(normalizeName(alias), entity.name);
+  }
+  return relationships.map((relationship) => ({
+    ...relationship,
+    source: canonicalByName.get(normalizeName(relationship.source)) ?? relationship.source,
+    target: canonicalByName.get(normalizeName(relationship.target)) ?? relationship.target,
+  }));
+};
+
 export const buildGraph = (extraction: ExtractionResult): Graph => {
   const { entities, nameIndex } = resolveEntities(extraction.entities);
   const nodes: GraphNode[] = entities.map(({ id, type, name, confidence }) => ({ id, type, name, confidence }));
@@ -145,7 +196,7 @@ export const buildGraph = (extraction: ExtractionResult): Graph => {
 const stixTypeFor = (entity: GraphNode) => {
   if (entity.type === "threat-actor") return "threat-actor";
   if (entity.type === "malware") return "malware";
-  if (entity.type === "tool") return "tool";
+  if (entity.type === "tool" || entity.type === "web-shell") return "tool";
   if (entity.type === "vulnerability") return "vulnerability";
   if (entity.type === "indicator") return "indicator";
   return "identity";
