@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { config } from "@/lib/config";
-import { processReport } from "@/modules/processing/process-report";
 import { jobQueue } from "@/modules/processing/queue";
 import { requireApiToken } from "@/modules/shared/auth";
 import { ChronicleError, problemResponse } from "@/modules/shared/errors";
@@ -40,7 +39,7 @@ export async function POST(request: Request) {
       if (!parsed.success) throw zodProblem(parsed.error);
       const url = parsed.data.url;
       const report = await reportStore.create({ sourceType: "url", sourceUrl: url });
-      jobQueue.enqueue(() => processReport(report.id, { kind: "url", url }));
+      jobQueue.enqueue({ reportId: report.id, kind: "url", url });
       return Response.json({ report_id: report.id, job_id: report.id, status: report.status }, { status: 202 });
     }
 
@@ -62,7 +61,7 @@ export async function POST(request: Request) {
     if (file.type && file.type !== "application/pdf") throw new ChronicleError("Only PDF uploads are accepted.", 415);
     const report = await reportStore.create({ sourceType: "pdf", filename: file.name });
     const bytes = new Uint8Array(await file.arrayBuffer());
-    jobQueue.enqueue(() => processReport(report.id, { kind: "pdf", filename: file.name, bytes }));
+    jobQueue.enqueue({ reportId: report.id, kind: "pdf", filename: file.name, bytes });
     return Response.json({ report_id: report.id, job_id: report.id, status: report.status }, { status: 202 });
   } catch (error) {
     return problemResponse(error);

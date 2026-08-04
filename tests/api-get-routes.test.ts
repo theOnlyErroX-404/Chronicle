@@ -13,7 +13,7 @@ vi.mock("@/modules/shared/report-store", () => ({
 }));
 
 vi.mock("@/modules/processing/queue", () => ({
-  jobQueue: { enqueue: vi.fn(), pending: () => 2, running: () => true },
+  jobQueue: { enqueue: vi.fn(), pending: async () => 2, running: async () => true },
 }));
 
 const get = (id: string) => new Request(`http://chronicle.local/api/v1/reports/${id}`);
