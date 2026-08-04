@@ -45,7 +45,7 @@ const pdfParseFailed = () =>
 
 // The worker file is loaded by node:worker_threads directly, not by the Next
 // bundler, so resolve it to the real source file in the project tree.
-const pdfWorkerUrl = () => pathToFileURL(path.join(process.cwd(), "modules", "ingestion", "pdf-worker.ts"));
+const pdfWorkerUrl = () => pathToFileURL(path.join(process.cwd(), "src", "modules", "ingestion", "pdf-worker.ts"));
 
 // Parse an untrusted PDF inside a worker thread. resourceLimits bound the
 // worker's heap/stack so a pathological file cannot OOM the server, and the

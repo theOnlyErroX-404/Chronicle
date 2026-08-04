@@ -6,14 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "worker": "tsx modules/processing/worker.ts",
+    "worker": "tsx src/modules/processing/worker.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "eval:golden": "tsx evaluation/run.ts",
-    "postman:sync": "tsx --env-file=.env scripts/postman-sync.ts"
+    "eval:golden": "tsx src/evaluation/run.ts",
+    "postman:sync": "tsx --env-file=.env src/scripts/postman-sync.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
