@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createJobQueue, jobToSource } from "@/modules/processing/queue";
-import { fromStoredJob, toStoredJob } from "@/modules/processing/bullmq-queue";
+import { createJobQueue, fromStoredJob, jobToSource, toStoredJob } from "@/modules/processing/queue";
 import { processReport } from "@/modules/processing/process-report";
 
 vi.mock("@/modules/processing/process-report", () => ({ processReport: vi.fn(async () => {}) }));

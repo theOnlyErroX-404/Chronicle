@@ -1,6 +1,6 @@
 import { requireApiToken } from "@/modules/shared/auth";
 import { ChronicleError, problemResponse } from "@/modules/shared/errors";
-import { jobQueue } from "@/modules/processing/queue";
+import { jobQueue } from "@/modules/processing";
 import { reportStore } from "@/modules/shared/report-store";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {

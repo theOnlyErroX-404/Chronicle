@@ -1,5 +1,4 @@
-import { createCircuitBreaker, extractCandidates, ExtractionFailureError } from "@/modules/extraction";
-import { getLlmClient } from "@/modules/extraction/llm-client";
+import { createCircuitBreaker, extractCandidates, ExtractionFailureError, getLlmClient } from "@/modules/extraction";
 import { ingestReport, type IngestionSource } from "@/modules/ingestion";
 import { buildGraph, buildStixLiteBundle, completeEntityEndpoints } from "@/modules/knowledge-modeling";
 import { ChronicleError } from "@/modules/shared/errors";

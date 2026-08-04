@@ -1,6 +1,5 @@
 import { config } from "@/lib/config";
-import { extractCandidates } from "@/modules/extraction";
-import { getLlmClient } from "@/modules/extraction/llm-client";
+import { extractCandidates, getLlmClient } from "@/modules/extraction";
 import { GOLDEN_REPORTS } from "@/evaluation/golden-set";
 import { evaluate, type EvaluationResult } from "@/evaluation/scoring";
 

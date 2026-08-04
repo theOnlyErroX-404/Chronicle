@@ -4,6 +4,8 @@ import { canonicalizeEndpoints, mergeExtractedEntities, mergeRelationships } fro
 import type { ExtractedEntity, ExtractedRelationship, ExtractionResult } from "@/modules/shared/contracts";
 import { ChronicleError } from "@/modules/shared/errors";
 
+export { getLlmClient } from "@/modules/extraction/llm-client";
+
 const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 500;
 

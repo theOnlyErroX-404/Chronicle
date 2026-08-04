@@ -2,9 +2,8 @@
 // Pulls process-report jobs from Redis (added by the Next.js process) and runs
 // the extraction pipeline. Requires JOB_QUEUE_BACKEND=redis.
 import { config } from "@/lib/config";
-import { createBullMqWorker, fromStoredJob, JOB_QUEUE_NAME } from "@/modules/processing/bullmq-queue";
+import { createBullMqWorker, fromStoredJob, JOB_QUEUE_NAME, jobToSource } from "@/modules/processing/queue";
 import { processReport } from "@/modules/processing/process-report";
-import { jobToSource } from "@/modules/processing/queue";
 
 const main = async () => {
   if (config.jobQueueBackend !== "redis" || !config.redisUrl) {
