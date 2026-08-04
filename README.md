@@ -47,7 +47,7 @@ For a deployed environment, set `CHRONICLE_API_TOKEN` and send
 `Authorization: Bearer <token>` to the API. The local UI permits unauthenticated
 development only when `NODE_ENV` is not production.
 
-## Configuration (`lib/config.ts`)
+## Configuration (`src/lib/config.ts`)
 
 | Env | Default | Meaning |
 |---|---|---|
