@@ -58,3 +58,15 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Gate the shipped image: fail the pipeline on fixable HIGH/CRITICAL
+      # vulnerabilities in the runtime image (OS packages + bundled npm deps).
+      # Unfixed advisories are ignored so the base image's known CVE backlog
+      # doesn't red the pipeline forever.
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1

@@ -97,6 +97,11 @@ describe("text normalization", () => {
     expect(normalizeText("  a\n  b\t c <style>x</style> <noscript>y</noscript> &nbsp; &amp;")).toBe("a b c &");
   });
 
+  it("strips script blocks with attributes or whitespace before the closing >", () => {
+    expect(normalizeText("<script type=\"text/javascript\">alert(1)</script >")).toBe("");
+    expect(normalizeText("x<script>alert(1)</script foo=\"bar\">y")).toBe("x y");
+  });
+
   it("rejects reports with too little extractable text", () => {
     expect(() => ensureUsableText("too short")).toThrow("did not contain enough extractable text");
     expect(ensureUsableText("x".repeat(100)).length).toBe(100);
