@@ -27,6 +27,11 @@ ENV HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs \
     && adduser --system --uid 1001 nextjs
 
+# The runner never invokes npm; drop the base image's bundled npm so the CVEs
+# in its bundled internals (tar, sigstore, brace-expansion, picomatch,
+# ip-address) don't ship or trip the Trivy image gate.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
+
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public

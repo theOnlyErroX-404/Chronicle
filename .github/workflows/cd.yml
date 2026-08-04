@@ -63,10 +63,17 @@ jobs:
       # vulnerabilities in the runtime image (OS packages + bundled npm deps).
       # Unfixed advisories are ignored so the base image's known CVE backlog
       # doesn't red the pipeline forever.
+      - name: Compute lowercase image ref
+        id: image
+        run: |
+          # Trivy's image parser rejects uppercase in the repo path (the repo
+          # name is mixed-case); GHCR resolves the lowercase form.
+          IMG="${REGISTRY,,}/${IMAGE_NAME,,}:main"
+          echo "ref=$IMG" >> "$GITHUB_OUTPUT"
       - name: Scan image for vulnerabilities
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
+          image-ref: ${{ steps.image.outputs.ref }}
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: 1
