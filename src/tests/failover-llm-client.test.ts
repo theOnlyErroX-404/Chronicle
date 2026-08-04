@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FailoverLlmClient, resetLlmCache } from "@/modules/extraction/llm-client";
 import type { OpenAiEndpoint } from "@/lib/config";
+import type { ExtractedEntity } from "@/modules/shared/contracts";
 
 const completionsResponse = (content: unknown) =>
   ({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(content) } }] }) }) as unknown as Response;
@@ -14,7 +15,9 @@ const endpoint = (baseUrl: string): OpenAiEndpoint => ({
   maxTokens: 8192,
 });
 
-const entities = { entities: [{ type: "threat-actor", name: "APT41", confidence: 1, evidence: "APT41" }] };
+const entities: { entities: ExtractedEntity[] } = {
+  entities: [{ type: "threat-actor", name: "APT41", confidence: 1, evidence: "APT41" }],
+};
 
 // Route requests by base URL so the mock can tell the two endpoints apart.
 const byUrl = (calls: ReturnType<typeof vi.fn>["mock"]["calls"]) => (baseUrl: string) =>

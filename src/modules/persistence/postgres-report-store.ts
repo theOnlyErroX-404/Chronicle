@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Prisma, PrismaClient, type Report as ReportRow } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { config } from "@/lib/config";
 import type { ExtractionResult, Graph, ReportStatus } from "@/modules/shared/contracts";
 import type { ReportRecord } from "@/modules/shared/report-store";
 
@@ -13,11 +15,15 @@ export type ReportDb = {
 };
 
 // Constructed lazily on first use: the in-memory backend (the default) never
-// loads the Prisma query engine, and DATABASE_URL is only consulted when a
-// query actually runs.
+// loads the Prisma client, and DATABASE_URL is only consulted when a query
+// actually runs. Prisma 7 requires a driver adapter (schema no longer carries
+// the URL); @prisma/adapter-pg keeps a pg.Pool inside.
 let client: PrismaClient | undefined;
 const getClient = (): PrismaClient => {
-  if (!client) client = new PrismaClient();
+  if (!client) {
+    const adapter = new PrismaPg(config.databaseUrl);
+    client = new PrismaClient({ adapter });
+  }
   return client;
 };
 
