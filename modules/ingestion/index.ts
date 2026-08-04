@@ -7,37 +7,11 @@ import { fetchPinned } from "@/modules/ingestion/transport";
 import { ensureUsableText, normalizeText } from "@/modules/ingestion/text";
 import type { PdfWorkerInput, PdfWorkerOutput } from "@/modules/ingestion/pdf-worker-protocol";
 import { ChronicleError } from "@/modules/shared/errors";
+import { readStreamWithLimit } from "@/modules/shared/stream";
 
 export type IngestionSource =
   | { kind: "url"; url: string }
   | { kind: "pdf"; filename: string; bytes: Uint8Array };
-
-const readBodyWithinLimit = async (response: Response) => {
-  const contentLength = Number(response.headers.get("content-length") ?? 0);
-  if (contentLength > config.maxReportBytes) throw new ChronicleError("The fetched report exceeds the configured size limit.", 413);
-  if (!response.body) return new Uint8Array();
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > config.maxReportBytes) {
-      await reader.cancel();
-      throw new ChronicleError("The fetched report exceeds the configured size limit.", 413);
-    }
-    chunks.push(value);
-  }
-  const body = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return body;
-};
 
 const fetchPublicReport = async (rawUrl: string, redirects = 0): Promise<{ bytes: Uint8Array; contentType: string }> => {
   if (redirects > config.maxRedirects) throw new ChronicleError("The report URL redirected too many times.");
@@ -55,7 +29,15 @@ const fetchPublicReport = async (rawUrl: string, redirects = 0): Promise<{ bytes
     return fetchPublicReport(new URL(location, target.url).toString(), redirects + 1);
   }
   if (!response.ok) throw new ChronicleError(`The report host returned HTTP ${response.status}.`, 502);
-  return { bytes: await readBodyWithinLimit(response), contentType: response.headers.get("content-type")?.toLowerCase() ?? "" };
+  // Fail fast on a lying content-length header before streaming; the stream is
+  // still capped so a missing/understated header cannot bypass the limit.
+  if (Number(response.headers.get("content-length") ?? 0) > config.maxReportBytes) {
+    throw new ChronicleError("The fetched report exceeds the configured size limit.", 413);
+  }
+  return {
+    bytes: await readStreamWithLimit(response.body, config.maxReportBytes, "The fetched report exceeds the configured size limit."),
+    contentType: response.headers.get("content-type")?.toLowerCase() ?? "",
+  };
 };
 
 const pdfParseFailed = () =>

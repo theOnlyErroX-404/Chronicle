@@ -6,24 +6,22 @@ import { evaluate, type EvaluationResult } from "@/evaluation/scoring";
 
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
 
-const pad = (value: string, width: number) => value.padStart(width);
-
 const printResult = (result: EvaluationResult) => {
-  const header = `${"report".padEnd(26)} ${pad("entities P", 12)} ${pad("entities R", 12)} ${pad("entities F1", 12)} ${pad("rels P", 12)} ${pad("rels R", 12)} ${pad("rels F1", 12)}`;
+  const header = `${"report".padEnd(26)} ${"entities P".padStart(12)} ${"entities R".padStart(12)} ${"entities F1".padStart(12)} ${"rels P".padStart(12)} ${"rels R".padStart(12)} ${"rels F1".padStart(12)}`;
   console.log(header);
   console.log("-".repeat(header.length));
   for (const report of result.perReport) {
     const e = report.entities;
     const r = report.relationships;
     console.log(
-      `${report.reportId.padEnd(26)} ${pad(percent(e.precision), 12)} ${pad(percent(e.recall), 12)} ${pad(percent(e.f1), 12)} ${pad(percent(r.precision), 12)} ${pad(percent(r.recall), 12)} ${pad(percent(r.f1), 12)}`,
+      `${report.reportId.padEnd(26)} ${percent(e.precision).padStart(12)} ${percent(e.recall).padStart(12)} ${percent(e.f1).padStart(12)} ${percent(r.precision).padStart(12)} ${percent(r.recall).padStart(12)} ${percent(r.f1).padStart(12)}`,
     );
   }
   console.log("-".repeat(header.length));
   const e = result.entities;
   const r = result.relationships;
   console.log(
-    `${"TOTAL".padEnd(26)} ${pad(percent(e.precision), 12)} ${pad(percent(e.recall), 12)} ${pad(percent(e.f1), 12)} ${pad(percent(r.precision), 12)} ${pad(percent(r.recall), 12)} ${pad(percent(r.f1), 12)}`,
+    `${"TOTAL".padEnd(26)} ${percent(e.precision).padStart(12)} ${percent(e.recall).padStart(12)} ${percent(e.f1).padStart(12)} ${percent(r.precision).padStart(12)} ${percent(r.recall).padStart(12)} ${percent(r.f1).padStart(12)}`,
   );
   console.log(`\nEntities:      ${e.matched}/${e.expected} expected found, ${e.extracted} extracted (precision penalizes extras, recall penalizes misses)`);
   console.log(`Relationships: ${r.matched}/${r.expected} expected found, ${r.extracted} extracted`);

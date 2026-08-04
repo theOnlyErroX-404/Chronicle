@@ -7,15 +7,11 @@ import { ChronicleError } from "@/modules/shared/errors";
 const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 500;
 
-export type CircuitBreaker = {
-  isOpen(): boolean;
-  recordFailure(): void;
-  recordSuccess(): void;
-};
+export type CircuitBreaker = ReturnType<typeof createCircuitBreaker>;
 
 // Opens after `threshold` consecutive failures and stays open for `cooldownMs`,
 // giving the local model server time to recover instead of hammering it.
-export const createCircuitBreaker = (threshold = 2, cooldownMs = 30_000): CircuitBreaker => {
+export const createCircuitBreaker = (threshold = 2, cooldownMs = 30_000) => {
   let consecutive = 0;
   let openedAt = 0;
   return {

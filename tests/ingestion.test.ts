@@ -5,7 +5,6 @@ import { fetchPinned } from "@/modules/ingestion/transport";
 import { ensureUsableText, normalizeText } from "@/modules/ingestion/text";
 
 vi.mock("@/modules/ingestion/security", () => ({
-  assertSafePublicUrl: vi.fn(async (rawUrl: string) => new URL(rawUrl)),
   resolveSafePublicUrl: vi.fn(async (rawUrl: string) => ({ url: new URL(rawUrl), addresses: [{ address: "93.184.216.34", family: 4 }] })),
 }));
 

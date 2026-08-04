@@ -84,5 +84,3 @@ export const resolveSafePublicUrl = async (rawUrl: string, resolveHost: HostReso
   if (!addresses.length || addresses.some(({ address, family: resolvedFamily }) => (resolvedFamily === 4 ? isPrivateIpv4(address) : isPrivateIpv6(address)))) rejectUnsafe();
   return { url, addresses };
 };
-
-export const assertSafePublicUrl = async (rawUrl: string, resolveHost?: HostResolver): Promise<URL> => (await resolveSafePublicUrl(rawUrl, resolveHost)).url;

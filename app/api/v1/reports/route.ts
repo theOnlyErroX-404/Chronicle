@@ -5,6 +5,7 @@ import { jobQueue } from "@/modules/processing/queue";
 import { requireApiToken } from "@/modules/shared/auth";
 import { ChronicleError, problemResponse } from "@/modules/shared/errors";
 import { reportStore } from "@/modules/shared/report-store";
+import { readStreamWithLimit } from "@/modules/shared/stream";
 
 export const runtime = "nodejs";
 
@@ -23,39 +24,12 @@ const zodProblem = (error: unknown): ChronicleError =>
 // the envelope and enforce the real limit on the parsed file size below.
 const MULTIPART_FRAMING_SLACK = 256 * 1024;
 
-// Stream the raw request body with a running byte counter instead of letting
-// request.json()/formData() buffer it unboundedly first: an oversized body is
-// rejected at the byte that crosses the cap, so memory stays bounded.
-const readBodyWithLimit = async (request: Request, limit: number): Promise<Uint8Array<ArrayBuffer>> => {
-  const reader = request.body?.getReader();
-  if (!reader) return new Uint8Array();
-  const chunks: Uint8Array<ArrayBufferLike>[] = [];
-  let size = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > limit) {
-      await reader.cancel();
-      throw new ChronicleError("The request body exceeds the configured size limit.", 413);
-    }
-    chunks.push(value);
-  }
-  const body = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return body;
-};
-
 export async function POST(request: Request) {
   try {
     requireApiToken(request);
     const contentType = request.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
-      const rawBody = await readBodyWithLimit(request, config.maxReportBytes);
+      const rawBody = await readStreamWithLimit(request.body, config.maxReportBytes, "The request body exceeds the configured size limit.");
       let body: unknown;
       try {
         body = JSON.parse(new TextDecoder().decode(rawBody));
@@ -71,7 +45,7 @@ export async function POST(request: Request) {
     }
 
     if (!contentType.includes("multipart/form-data")) throw new ChronicleError("Submit either JSON { url } or multipart/form-data with a PDF file.", 415);
-    const rawBody = await readBodyWithLimit(request, config.maxReportBytes + MULTIPART_FRAMING_SLACK);
+    const rawBody = await readStreamWithLimit(request.body, config.maxReportBytes + MULTIPART_FRAMING_SLACK, "The request body exceeds the configured size limit.");
     let formData: FormData;
     try {
       // The bytes are already bounded above, so re-parsing the buffered body is

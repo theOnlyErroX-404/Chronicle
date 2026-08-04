@@ -133,17 +133,9 @@ ${chunk}`;
 const invalidOutput = () =>
   new ChronicleError("The LLM returned output that failed schema validation.", 502, "https://chronicle.local/problems/invalid-llm-output");
 
-const parseEntities = (payload: unknown): ExtractedEntity[] => {
+const parsePass = <T>(schema: z.ZodType<T>, payload: unknown): T => {
   try {
-    return EntitiesOnlySchema.parse(payload).entities;
-  } catch {
-    throw invalidOutput();
-  }
-};
-
-const parseRelationships = (payload: unknown): ExtractedRelationship[] => {
-  try {
-    return RelationshipsOnlySchema.parse(payload).relationships;
+    return schema.parse(payload);
   } catch {
     throw invalidOutput();
   }
@@ -158,17 +150,13 @@ type ChatFn = (messages: Array<{ role: string; content: string }>, format: ChatF
 
 const runEntityPass = async (chat: ChatFn, chunk: string): Promise<ExtractedEntity[]> => {
   const format: ChatFormat = config.extractionFormat === "schema" ? { name: "entities", schema: entitiesSchema } : "json";
-  return parseEntities(
-    await chat([{ role: "system", content: systemPrompt }, { role: "user", content: entitiesGuidance(chunk) }], format),
-  );
+  return parsePass(EntitiesOnlySchema, await chat([{ role: "system", content: systemPrompt }, { role: "user", content: entitiesGuidance(chunk) }], format)).entities;
 };
 
 const runRelationshipPass = async (chat: ChatFn, chunk: string, entities: ExtractedEntity[]): Promise<ExtractedRelationship[]> => {
   const names = [...new Set(entities.map((entity) => entity.name.trim()).filter(Boolean))];
   const format: ChatFormat = config.extractionFormat === "schema" ? { name: "relationships", schema: relationshipsSchema(names) } : "json";
-  return parseRelationships(
-    await chat([{ role: "system", content: systemPrompt }, { role: "user", content: relationshipsGuidance(chunk, entities) }], format),
-  );
+  return parsePass(RelationshipsOnlySchema, await chat([{ role: "system", content: systemPrompt }, { role: "user", content: relationshipsGuidance(chunk, entities) }], format)).relationships;
 };
 
 // Fingerprint of the prompts and schemas that shape a result. Part of the cache
