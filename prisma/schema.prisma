@@ -2,9 +2,12 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Prisma 7: the URL is no longer read from the schema. The CLI reads it from
+// prisma.config.ts (migrate/deploy/studio), and the runtime client gets it via
+// the @prisma/adapter-pg driver adapter (src/modules/persistence/
+// postgres-report-store.ts).
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // Durable form of the in-memory ReportRecord. JSONB columns carry the heavy
