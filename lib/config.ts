@@ -71,6 +71,10 @@ export const config = {
   // Postgres connection string (prisma uses env("DATABASE_URL") directly for
   // migrations; this mirrors it for the app-side config validation).
   databaseUrl: process.env.DATABASE_URL ?? "",
+  // Durable job queue seam: "memory" (default, in-process serialized queue) or
+  // "redis" (BullMQ durable queue; run `npm run worker` to consume it).
+  jobQueueBackend: process.env.JOB_QUEUE_BACKEND === "redis" ? "redis" : "memory",
+  redisUrl: process.env.REDIS_URL ?? "",
   // Extraction tuning. On CPU-only inference a 3B model is far slower than a
   // hosted API: chunks must stay small and per-call timeouts generous, and it
   // must stay under Ollama's ~5 minute server-side request cap.

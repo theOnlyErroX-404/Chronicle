@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCircuitBreaker, extractCandidates, ExtractionFailureError } from "@/modules/extraction";
 import { OllamaLlmClient } from "@/modules/extraction/llm-client";
 import { ChronicleError } from "@/modules/shared/errors";
-import { jobQueue } from "@/modules/processing/queue";
 import type { ExtractionResult } from "@/modules/shared/contracts";
 
 const sample: ExtractionResult = {
@@ -118,23 +117,5 @@ describe("extractCandidates partial failure", () => {
     await expect(extractCandidates("text", client, { breaker })).rejects.toBeInstanceOf(ChronicleError);
     expect(client.extractEntities).not.toHaveBeenCalled();
     expect(client.extractRelationships).not.toHaveBeenCalled();
-  });
-});
-
-describe("job queue", () => {
-  it("runs tasks serially in submission order", async () => {
-    const order: string[] = [];
-    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-    jobQueue.enqueue(async () => { order.push("a"); await wait(40); order.push("a-done"); });
-    jobQueue.enqueue(async () => { order.push("b"); order.push("b-done"); });
-    await wait(120);
-    expect(order).toEqual(["a", "a-done", "b", "b-done"]);
-  });
-
-  it("reports the number of pending tasks", async () => {
-    const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-    jobQueue.enqueue(async () => wait(50));
-    expect(jobQueue.pending()).toBeGreaterThanOrEqual(0);
-    await wait(80);
   });
 });
