@@ -6,24 +6,26 @@ import { ChronicleError } from "@/modules/shared/errors";
 import { reportStore } from "@/modules/shared/report-store";
 
 export const processReport = async (reportId: string, source: IngestionSource) => {
-  const setProgress = (text: string) => {
-    reportStore.update(reportId, { progress: text });
-  };
+  const setProgress = async (text: string) => { await reportStore.update(reportId, { progress: text }); };
 
-  const fail = (error: unknown, partial = false) => {
+  const fail = async (error: unknown, partial = false) => {
     const safeMessage = error instanceof ChronicleError
       ? error.message
       : "The report could not be fully processed.";
     console.error(`[report ${reportId}] processing failed:`, error);
-    reportStore.update(reportId, { status: "failed", errorMessage: safeMessage, partial });
+    try {
+      await reportStore.update(reportId, { status: "failed", errorMessage: safeMessage, partial });
+    } catch (storeError) {
+      console.error(`[report ${reportId}] failed to persist failure state:`, storeError);
+    }
   };
 
   try {
     const client = getLlmClient();
     await client.checkHealth?.();
-    reportStore.update(reportId, { status: "ingesting", errorMessage: undefined, partial: undefined, progress: "ingesting" });
+    await reportStore.update(reportId, { status: "ingesting", errorMessage: undefined, partial: undefined, progress: "ingesting" });
     const rawText = await ingestReport(source);
-    reportStore.update(reportId, { rawText, status: "extracting", progress: "extracting" });
+    await reportStore.update(reportId, { rawText, status: "extracting", progress: "extracting" });
 
     const extraction = await extractCandidates(rawText, client, {
       onProgress: ({ current, total }) => setProgress(`chunk ${current}/${total}`),
@@ -33,11 +35,11 @@ export const processReport = async (reportId: string, source: IngestionSource) =
       breaker: createCircuitBreaker(),
     });
     const completed = completeEntityEndpoints(extraction);
-    reportStore.update(reportId, { extraction: completed, status: "modeling", progress: "modeling" });
+    await reportStore.update(reportId, { extraction: completed, status: "modeling", progress: "modeling" });
 
     const graph = buildGraph(completed);
     const stixBundle = buildStixLiteBundle(reportId, graph);
-    reportStore.update(reportId, { graph, stixBundle, status: "done", partial: undefined, progress: undefined });
+    await reportStore.update(reportId, { graph, stixBundle, status: "done", partial: undefined, progress: undefined });
   } catch (error) {
     if (error instanceof ExtractionFailureError) {
       // Partial success: a late chunk failed, but earlier chunks extracted fine.
@@ -45,18 +47,22 @@ export const processReport = async (reportId: string, source: IngestionSource) =
       const completed = completeEntityEndpoints(error.partial);
       const graph = buildGraph(completed);
       const stixBundle = buildStixLiteBundle(reportId, graph);
-      reportStore.update(reportId, {
-        extraction: completed,
-        graph,
-        stixBundle,
-        status: "failed",
-        partial: true,
-        errorMessage: "Extraction completed partially: some segments failed, results below are incomplete.",
-        progress: undefined,
-      });
+      try {
+        await reportStore.update(reportId, {
+          extraction: completed,
+          graph,
+          stixBundle,
+          status: "failed",
+          partial: true,
+          errorMessage: "Extraction completed partially: some segments failed, results below are incomplete.",
+          progress: undefined,
+        });
+      } catch (storeError) {
+        console.error(`[report ${reportId}] failed to persist partial state:`, storeError);
+      }
       console.error(`[report ${reportId}] partial extraction failure:`, error);
       return;
     }
-    fail(error);
+    await fail(error);
   }
 };

@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       const parsed = jsonReportSchema.safeParse(body);
       if (!parsed.success) throw zodProblem(parsed.error);
       const url = parsed.data.url;
-      const report = reportStore.create({ sourceType: "url", sourceUrl: url });
+      const report = await reportStore.create({ sourceType: "url", sourceUrl: url });
       jobQueue.enqueue(() => processReport(report.id, { kind: "url", url }));
       return Response.json({ report_id: report.id, job_id: report.id, status: report.status }, { status: 202 });
     }
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     const file = parsed.data.file;
     if (file.size === 0 || file.size > config.maxReportBytes) throw new ChronicleError("The PDF exceeds the configured size limit.", 413);
     if (file.type && file.type !== "application/pdf") throw new ChronicleError("Only PDF uploads are accepted.", 415);
-    const report = reportStore.create({ sourceType: "pdf", filename: file.name });
+    const report = await reportStore.create({ sourceType: "pdf", filename: file.name });
     const bytes = new Uint8Array(await file.arrayBuffer());
     jobQueue.enqueue(() => processReport(report.id, { kind: "pdf", filename: file.name, bytes }));
     return Response.json({ report_id: report.id, job_id: report.id, status: report.status }, { status: 202 });

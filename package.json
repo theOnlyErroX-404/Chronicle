@@ -14,6 +14,7 @@
     "eval:golden": "tsx evaluation/run.ts"
   },
   "dependencies": {
+    "@prisma/client": "^6.19.3",
     "cytoscape": "^3.33.1",
     "next": "^16.0.0",
     "react": "^19.2.0",
@@ -29,6 +30,7 @@
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.0.0",
     "prettier": "^3.6.0",
+    "prisma": "^6.19.3",
     "tsx": "^4.23.5",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"

@@ -98,7 +98,7 @@ describe("extractCandidates partial failure", () => {
     };
     const progress: Array<{ current: number; total: number }> = [];
     const promise = extractCandidates("First chunk. Second chunk.", client, {
-      onProgress: (p) => progress.push(p),
+      onProgress: (p) => { progress.push(p); },
       breaker: createCircuitBreaker(2, 1_000),
       maxChars: 20,
     });

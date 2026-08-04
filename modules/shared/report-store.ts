@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtractionResult, Graph, ReportStatus } from "@/modules/shared/contracts";
 import { config } from "@/lib/config";
+import { createPostgresReportStore } from "@/modules/persistence/postgres-report-store";
 
 export type ReportRecord = {
   id: string;
@@ -22,9 +23,9 @@ export type ReportRecord = {
 type NewReport = Pick<ReportRecord, "sourceType" | "sourceUrl" | "filename">;
 
 export type ReportStore = {
-  create(input: NewReport): ReportRecord;
-  get(id: string): ReportRecord | undefined;
-  update(id: string, patch: Partial<Omit<ReportRecord, "id" | "createdAt" | "sourceType">>): ReportRecord;
+  create(input: NewReport): Promise<ReportRecord>;
+  get(id: string): Promise<ReportRecord | undefined>;
+  update(id: string, patch: Partial<Omit<ReportRecord, "id" | "createdAt" | "sourceType">>): Promise<ReportRecord>;
 };
 
 const activeStatuses = new Set<ReportStatus>(["queued", "ingesting", "extracting", "modeling"]);
@@ -34,7 +35,7 @@ class InMemoryReportStore implements ReportStore {
 
   constructor(private readonly maxItems: number) {}
 
-  create(input: NewReport): ReportRecord {
+  async create(input: NewReport): Promise<ReportRecord> {
     const now = new Date().toISOString();
     const report: ReportRecord = { id: randomUUID(), ...input, status: "queued", createdAt: now, updatedAt: now };
     this.reports.set(report.id, report);
@@ -42,11 +43,11 @@ class InMemoryReportStore implements ReportStore {
     return report;
   }
 
-  get(id: string): ReportRecord | undefined {
+  async get(id: string): Promise<ReportRecord | undefined> {
     return this.reports.get(id);
   }
 
-  update(id: string, patch: Partial<Omit<ReportRecord, "id" | "createdAt" | "sourceType">>): ReportRecord {
+  async update(id: string, patch: Partial<Omit<ReportRecord, "id" | "createdAt" | "sourceType">>): Promise<ReportRecord> {
     const current = this.reports.get(id);
     if (!current) throw new Error(`Report ${id} was not found.`);
     const updated = { ...current, ...patch, updatedAt: new Date().toISOString() };
@@ -66,12 +67,21 @@ class InMemoryReportStore implements ReportStore {
   }
 }
 
-export const createReportStore = (maxItems: number = config.reportStoreMaxItems): ReportStore => new InMemoryReportStore(maxItems);
+export const createReportStore = (maxItems: number = config.reportStoreMaxItems): ReportStore => {
+  if (config.reportStoreBackend === "postgres") {
+    if (!config.databaseUrl) {
+      throw new Error("REPORT_STORE_BACKEND=postgres requires DATABASE_URL to be set.");
+    }
+    return createPostgresReportStore();
+  }
+  return new InMemoryReportStore(maxItems);
+};
 
 declare global {
   var chronicleReportStore: ReportStore | undefined;
 }
 
-// Phase 1 persistence seam. Replace this implementation with a Prisma repository in Phase 2.
+// Persistence seam: "memory" (bounded in-process, default) or "postgres"
+// (durable, via Prisma). Both implement the same async ReportStore interface.
 export const reportStore: ReportStore = globalThis.chronicleReportStore ?? createReportStore();
 if (process.env.NODE_ENV !== "production") globalThis.chronicleReportStore = reportStore;
