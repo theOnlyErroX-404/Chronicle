@@ -75,6 +75,9 @@ development only when `NODE_ENV` is not production.
   `postman/Chronicle.postman_environment.json`. Set `apiToken` to match `CHRONICLE_API_TOKEN`
   (leave empty locally); `baseUrl` defaults to `http://127.0.0.1:3210`. The create-report
   requests store the returned `report_id`/`job_id` for the polling requests.
+- **Postman sync**: with `Postman_API_KEY` in `.env` (and optionally `POSTMAN_WORKSPACE_ID`),
+  `npm run postman:sync` upserts the local collection + environment into your Postman
+  workspace by name (creates once, updates on later runs).
 
 ## Status vs the blueprint
 
