@@ -44,6 +44,26 @@ describe("fetchPinned (DNS pinning)", () => {
     await expect(fetchPinned(target, 2_000)).rejects.toBeInstanceOf(Error);
   });
 
+  it("preserves repeated response headers", async () => {
+    const multi = createServer((_req, res) => {
+      res.setHeader("x-tag", ["one", "two"]);
+      res.writeHead(200);
+      res.end("ok");
+    });
+    await new Promise<void>((resolve) => multi.listen(0, "127.0.0.1", resolve));
+    const multiPort = (multi.address() as { port: number }).port;
+    try {
+      const target: SafePublicUrl = {
+        url: new URL(`http://public.example:${multiPort}/`),
+        addresses: [{ address: "127.0.0.1", family: 4 }],
+      };
+      const response = await fetchPinned(target, 5_000);
+      expect(response.headers.get("x-tag")).toBe("one, two");
+    } finally {
+      await new Promise<void>((resolve) => multi.close(() => resolve()));
+    }
+  });
+
   it("aborts the request when the timeout elapses", async () => {
     const slow = createServer(() => {
       // Never respond; the abort must tear the request down.

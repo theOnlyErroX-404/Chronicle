@@ -12,6 +12,13 @@ describe("createLlmCache", () => {
     expect(cache.get("a")).toBe(1);
   });
 
+  it("replaces a value on a re-set key", () => {
+    const cache = createLlmCache();
+    cache.set("a", 1);
+    cache.set("a", 2);
+    expect(cache.get("a")).toBe(2);
+  });
+
   it("evicts the least-recently-used entry once full", () => {
     const cache = createLlmCache(2);
     cache.set("a", 1);
