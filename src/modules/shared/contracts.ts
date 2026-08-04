@@ -97,3 +97,30 @@ export const ReportStatusSchema = z.enum([
   "failed",
 ]);
 export type ReportStatus = z.infer<typeof ReportStatusSchema>;
+
+// Human-in-the-loop feedback (architecture §2 Feedback context): an analyst
+// accepts, rejects, or corrects an extracted entity / relationship / mapping.
+// targetId refers to the graph node id (entity), edge id (relationship), or
+// technique mapping key; correctedValue carries the field overrides for
+// "correct" actions (e.g. { name: "..." } for an entity).
+export const CorrectionTargetSchema = z.enum(["entity", "relationship", "mapping"]);
+export const CorrectionActionSchema = z.enum(["accept", "reject", "correct"]);
+
+// Value bounds keep each entry small; the 64KB request-body cap bounds the total.
+const CorrectionValueSchema = z.record(z.string().min(1).max(100), z.union([z.string().max(500), z.number().min(-1e9).max(1e9)]));
+
+export const CorrectionSchema = z.object({
+  id: z.string().min(1),
+  targetType: CorrectionTargetSchema,
+  targetId: z.string().min(1).max(300),
+  action: CorrectionActionSchema,
+  correctedValue: CorrectionValueSchema.optional(),
+  note: z.string().max(500).optional(),
+  createdAt: z.string(),
+});
+
+// What the API accepts: id and createdAt are server-assigned, never client-supplied.
+export const CorrectionInputSchema = CorrectionSchema.omit({ id: true, createdAt: true });
+
+export type Correction = z.infer<typeof CorrectionSchema>;
+export type CorrectionInput = z.infer<typeof CorrectionInputSchema>;
