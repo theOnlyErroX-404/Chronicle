@@ -97,6 +97,22 @@ describe("FailoverLlmClient", () => {
     expect(count("b.example")).toBe(1);
   });
 
+  it("fails over on extractRelationships too", async () => {
+    const fetchMock = vi.fn(async (request: Request | string) =>
+      String(request).includes("a.example") ? statusResponse(429) : completionsResponse({ relationships: [] }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new FailoverLlmClient([endpoint("https://a.example"), endpoint("https://b.example")]);
+
+    const result = await client.extractRelationships("APT41.", entities.entities);
+
+    expect(result).toEqual([]);
+    const count = byUrl(fetchMock.mock.calls);
+    expect(count("a.example")).toBe(1); // rate-limited once, then blacked out
+    expect(count("b.example")).toBe(1);
+  });
+
   it("propagates the last error when every endpoint fails", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => statusResponse(429)));
 
