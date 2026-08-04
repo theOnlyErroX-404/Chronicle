@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "8f2c1d3e-9a4b-4c5d-8e6f-0a1b2c3d4e5f",
     "name": "Chronicle ThreatGraph",
-    "description": "API for Chronicle: submit threat-report URLs or PDFs and poll the resulting knowledge graph / STIX bundle. Authentication uses `Authorization: Bearer <token>` (only required when `CHRONICLE_API_TOKEN` is set on the server).",
+    "description": "API for **Chronicle**: submit threat-report URLs or PDFs and poll the resulting knowledge graph / STIX 2.1-lite bundle.\n\n## Base URL\n`{{baseUrl}}` defaults to `http://127.0.0.1:3210` (override in the environment).\n\n## Authentication\nAll endpoints use `Authorization: Bearer <token>` (set at collection level via `{{apiToken}}`). Auth is only enforced when the server sets `CHRONICLE_API_TOKEN`. Without a token:\n- non-production: requests pass through unauthenticated\n- production with no token configured: **503** `Server authentication is not configured.`\n- wrong/missing token: **401** `A valid bearer token is required.`\n\n## Processing lifecycle\n`queued → ingesting → extracting → modeling → done` (or `failed`).\n\n## Limits\n- Max report size: **10 MB** (`MAX_REPORT_BYTES`); oversized → **413**.\n- Only `application/pdf` uploads accepted → else **415**.\n- Graph caps: ≤ 250 entities, ≤ 500 relationships.\n\n## Error format (RFC 7807 problem+json)\n```json\n{\"type\": \"https://chronicle.local/problems/validation-error\", \"title\": \"Request rejected\", \"status\": 400, \"detail\": \"...\"}\n```\nKnown `type` URIs: `problems/validation-error` (400), `problems/unauthorized` (401), `problems/not-found` (404), `problems/not-ready` (409), `problems/internal-error` (500).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -40,12 +40,18 @@
   "item": [
     {
       "name": "Reports",
+      "description": "Create and poll reports. Each accepted submission returns **202** with `report_id` (= `job_id`); processing runs in the background.",
       "item": [
         {
           "name": "Create report from URL",
           "request": {
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
               "raw": "{\n  \"url\": \"https://example.com/threat-report\"\n}",
@@ -57,10 +63,16 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports"
+              ]
             },
-            "description": "Submit a threat-report URL. Returns 202 with `report_id`/`job_id`; processing continues in the background."
+            "description": "Submit a threat-report **URL** as JSON.\n\nBody: `{\"url\": \"<valid https? URL>\"}`\n\nReturns **202 Accepted** with `report_id`, `job_id` (same value) and `status` (`queued`). Processing continues asynchronously.\n\nErrors:\n- **400** invalid JSON, or `url` missing/not a valid URL (`Provide a valid report URL.`)\n- **401** missing/bad bearer token\n- **413** body larger than the 10 MB limit\n- **415** wrong content type\n\nThe test script captures `report_id`/`job_id` into collection variables for the polling requests."
           },
           "event": [
             {
@@ -76,6 +88,98 @@
                   "}"
                 ]
               }
+            }
+          ],
+          "response": [
+            {
+              "name": "202 Accepted",
+              "originalRequest": {
+                "method": "POST",
+                "url": "{{baseUrl}}/api/v1/reports",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"url\": \"https://example.com/threat-report\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Accepted",
+              "code": 202,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"report_id\": \"0a2f6ebc-bb64-4fbb-b527-7201adbc6f04\",\n  \"job_id\": \"0a2f6ebc-bb64-4fbb-b527-7201adbc6f04\",\n  \"status\": \"queued\"\n}"
+            },
+            {
+              "name": "401 Unauthorized",
+              "originalRequest": {
+                "method": "POST",
+                "url": "{{baseUrl}}/api/v1/reports",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ]
+              },
+              "status": "Unauthorized",
+              "code": 401,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/problem+json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"type\": \"https://chronicle.local/problems/unauthorized\",\n  \"title\": \"Request rejected\",\n  \"status\": 401,\n  \"detail\": \"A valid bearer token is required.\"\n}"
+            },
+            {
+              "name": "400 Invalid URL",
+              "originalRequest": {
+                "method": "POST",
+                "url": "{{baseUrl}}/api/v1/reports",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"url\": \"not-a-url\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "status": "Bad Request",
+              "code": 400,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/problem+json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"type\": \"https://chronicle.local/problems/validation-error\",\n  \"title\": \"Request rejected\",\n  \"status\": 400,\n  \"detail\": \"Provide a valid report URL.\"\n}"
             }
           ]
         },
@@ -96,10 +200,16 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports"
+              ]
             },
-            "description": "Upload a PDF threat report (multipart/form-data, field name `file`). Returns 202 with `report_id`."
+            "description": "Upload a **PDF** threat report as `multipart/form-data`.\n\nForm field: `file` (the PDF).\n\nReturns **202 Accepted** with `report_id`, `job_id` and `status` (`queued`).\n\nErrors:\n- **400** missing `file` field or malformed multipart body\n- **401** missing/bad bearer token\n- **413** file is empty or larger than the 10 MB limit (`The PDF exceeds the configured size limit.`)\n- **415** file content-type is not `application/pdf` (`Only PDF uploads are accepted.`)\n\nThe test script captures `report_id`/`job_id` into collection variables."
           },
           "event": [
             {
@@ -116,6 +226,64 @@
                 ]
               }
             }
+          ],
+          "response": [
+            {
+              "name": "202 Accepted",
+              "originalRequest": {
+                "method": "POST",
+                "url": "{{baseUrl}}/api/v1/reports",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": "/path/to/report.pdf"
+                    }
+                  ]
+                }
+              },
+              "status": "Accepted",
+              "code": 202,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"report_id\": \"3b7a91e2-ff82-4c19-9a3d-52f0b81c7d29\",\n  \"job_id\": \"3b7a91e2-ff82-4c19-9a3d-52f0b81c7d29\",\n  \"status\": \"queued\"\n}"
+            },
+            {
+              "name": "415 Wrong content type",
+              "originalRequest": {
+                "method": "POST",
+                "url": "{{baseUrl}}/api/v1/reports",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "file",
+                      "type": "file",
+                      "src": "/path/to/report.txt"
+                    }
+                  ]
+                }
+              },
+              "status": "Unsupported Media Type",
+              "code": 415,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/problem+json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"type\": \"https://chronicle.local/problems/validation-error\",\n  \"title\": \"Request rejected\",\n  \"status\": 415,\n  \"detail\": \"Only PDF uploads are accepted.\"\n}"
+            }
           ]
         },
         {
@@ -125,11 +293,56 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "{{report_id}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports",
+                "{{report_id}}"
+              ]
             },
-            "description": "Poll report status (`queued` → `ingesting` → `extracting` → `modeling` → `done` | `failed`)."
-          }
+            "description": "Poll a report's status.\n\nReturns **200** with:\n- `id` — report UUID\n- `source_type` — `url` or `pdf`\n- `source_url` — source URL (url reports)\n- `filename` — uploaded filename (pdf reports)\n- `status` — `queued` → `ingesting` → `extracting` → `modeling` → `done` | `failed`\n- `created_at` — ISO-8601 timestamp\n\nErrors:\n- **401** missing/bad bearer token\n- **404** unknown `report_id` (`Report not found.`)\n\nFor progress, `partial` results and `queue_position`, use **Get job** instead."
+          },
+          "response": [
+            {
+              "name": "200 Done",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/reports/{{report_id}}"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": \"0a2f6ebc-bb64-4fbb-b527-7201adbc6f04\",\n  \"source_type\": \"url\",\n  \"source_url\": \"https://example.com/threat-report\",\n  \"filename\": null,\n  \"status\": \"done\",\n  \"created_at\": \"2026-08-04T12:00:00.000Z\"\n}"
+            },
+            {
+              "name": "404 Not found",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/reports/{{report_id}}"
+              },
+              "status": "Not Found",
+              "code": 404,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/problem+json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"type\": \"https://chronicle.local/problems/not-found\",\n  \"title\": \"Request rejected\",\n  \"status\": 404,\n  \"detail\": \"Report not found.\"\n}"
+            }
+          ]
         },
         {
           "name": "Get report graph",
@@ -138,11 +351,57 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}/graph",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "{{report_id}}", "graph"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports",
+                "{{report_id}}",
+                "graph"
+              ]
             },
-            "description": "Interactive knowledge graph (nodes/edges). 409 until the graph is ready."
-          }
+            "description": "Interactive knowledge graph for a finished report.\n\nReturns **200** with:\n- `nodes[]`: `{ id, type, name, confidence }`\n  - `type` ∈ `threat-actor`, `malware`, `tool`, `web-shell`, `vulnerability`, `indicator`, `sector`, `country`, `campaign`, `email`, `file-path`\n  - `confidence` ∈ 0..1\n- `edges[]`: `{ id, source, target, type, confidence }`\n  - `type` ∈ `uses`, `exploits`, `targets`, `attributed-to`, `communicates-with`, `mitigated-by`, `executes`, `downloads`, `delivers`, `exfiltrates`\n  - `source`/`target` reference `node.id`\n\nErrors:\n- **404** unknown `report_id`\n- **409** graph not ready yet (`The report graph is not ready yet.`) — retry once `status` is `done`"
+          },
+          "response": [
+            {
+              "name": "200 Graph",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/reports/{{report_id}}/graph"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"nodes\": [\n    { \"id\": \"node--01ab\", \"type\": \"threat-actor\", \"name\": \"APT-42\", \"confidence\": 0.92 },\n    { \"id\": \"node--02cd\", \"type\": \"malware\", \"name\": \"PoisonFang\", \"confidence\": 0.87 },\n    { \"id\": \"node--03ef\", \"type\": \"country\", \"name\": \"Krakovia\", \"confidence\": 0.74 }\n  ],\n  \"edges\": [\n    { \"id\": \"edge--a1\", \"source\": \"node--02cd\", \"target\": \"node--01ab\", \"type\": \"attributed-to\", \"confidence\": 0.85 },\n    { \"id\": \"edge--b2\", \"source\": \"node--01ab\", \"target\": \"node--03ef\", \"type\": \"targets\", \"confidence\": 0.70 }\n  ]\n}"
+            },
+            {
+              "name": "409 Not ready",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/reports/{{report_id}}/graph"
+              },
+              "status": "Conflict",
+              "code": 409,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/problem+json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"type\": \"https://chronicle.local/problems/not-ready\",\n  \"title\": \"Request rejected\",\n  \"status\": 409,\n  \"detail\": \"The report graph is not ready yet.\"\n}"
+            }
+          ]
         },
         {
           "name": "Get report STIX bundle",
@@ -151,16 +410,49 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}/stix",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "reports", "{{report_id}}", "stix"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports",
+                "{{report_id}}",
+                "stix"
+              ]
             },
-            "description": "STIX 2.1-lite bundle as a JSON download. 409 until ready."
-          }
+            "description": "STIX 2.1-lite bundle for a finished report, as a JSON download (`content-disposition: attachment; filename=chronicle-<id>.stix.json`).\n\nReturns **200** with a STIX bundle:\n- `{ \"type\": \"bundle\", \"id\": \"bundle--<uuid>\", \"spec_version\": \"2.1\", \"objects\": [...] }`\n- `objects[]` = entities mapped to STIX types (`threat-actor`, `malware`, `tool`, `vulnerability`, `indicator`, `campaign`, `identity`) with `id`, `created`, `modified`, `name`, `confidence` (0-100), `labels` (the internal entity type), `x_chronicle_report_id`\n- plus `relationship` objects linking `source_ref` → `target_ref` with `relationship_type`\n\nErrors:\n- **404** unknown `report_id`\n- **409** bundle not ready yet (`The STIX bundle is not ready yet.`)"
+          },
+          "response": [
+            {
+              "name": "200 Bundle",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/reports/{{report_id}}/stix"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/json"
+                },
+                {
+                  "key": "content-disposition",
+                  "value": "attachment; filename=chronicle-0a2f6ebc-bb64-4fbb-b527-7201adbc6f04.stix.json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"type\": \"bundle\",\n  \"id\": \"bundle--5f1a7c6d-2b3e-4f5a-8c7d-9e0f1a2b3c4d\",\n  \"spec_version\": \"2.1\",\n  \"objects\": [\n    {\n      \"type\": \"threat-actor\",\n      \"spec_version\": \"2.1\",\n      \"id\": \"threat-actor--01ab\",\n      \"created\": \"2026-08-04T12:00:00.000Z\",\n      \"modified\": \"2026-08-04T12:00:00.000Z\",\n      \"name\": \"APT-42\",\n      \"confidence\": 92,\n      \"labels\": [\"threat-actor\"],\n      \"x_chronicle_report_id\": \"0a2f6ebc-bb64-4fbb-b527-7201adbc6f04\"\n    },\n    {\n      \"type\": \"relationship\",\n      \"spec_version\": \"2.1\",\n      \"id\": \"relationship--a1\",\n      \"created\": \"2026-08-04T12:00:00.000Z\",\n      \"modified\": \"2026-08-04T12:00:00.000Z\",\n      \"relationship_type\": \"attributed-to\",\n      \"source_ref\": \"malware--02cd\",\n      \"target_ref\": \"threat-actor--01ab\",\n      \"confidence\": 85,\n      \"x_chronicle_report_id\": \"0a2f6ebc-bb64-4fbb-b527-7201adbc6f04\"\n    }\n  ]\n}"
+            }
+          ]
         }
       ]
     },
     {
       "name": "Jobs",
+      "description": "Job detail for a submitted report (same id as the report).",
       "item": [
         {
           "name": "Get job",
@@ -169,11 +461,74 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/jobs/{{job_id}}",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "jobs", "{{job_id}}"]
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "jobs",
+                "{{job_id}}"
+              ]
             },
-            "description": "Job detail: status, progress, `queue_position`, `partial`, and error message on failure."
-          }
+            "description": "Job detail for a report.\n\nReturns **200** with:\n- `id`, `report_id` — same UUID\n- `status` — lifecycle state (see collection description)\n- `progress` — free-form progress string (e.g. `relationships (3/7 chunks)`)\n- `partial` — `true` when results were salvaged from a partially-failed run\n- `error` — failure message when `status` is `failed`, else `null`\n- `queue_position` — position in the queue (running job = 1); only present while `queued`\n- `created_at`, `updated_at` — ISO-8601 timestamps\n\nErrors:\n- **401** missing/bad bearer token\n- **404** unknown id (`Job not found.`)"
+          },
+          "response": [
+            {
+              "name": "200 In-flight",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/jobs/{{job_id}}"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": \"0a2f6ebc-bb64-4fbb-b527-7201adbc6f04\",\n  \"report_id\": \"0a2f6ebc-bb64-4fbb-b527-7201adbc6f04\",\n  \"status\": \"extracting\",\n  \"progress\": \"relationships (3/7 chunks)\",\n  \"partial\": true,\n  \"error\": null,\n  \"queue_position\": null,\n  \"created_at\": \"2026-08-04T12:00:00.000Z\",\n  \"updated_at\": \"2026-08-04T12:03:00.000Z\"\n}"
+            },
+            {
+              "name": "200 Queued with position",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/jobs/{{job_id}}"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": \"7d42c8aa-1ef0-4a3b-9c2d-5e6f708192a3\",\n  \"report_id\": \"7d42c8aa-1ef0-4a3b-9c2d-5e6f708192a3\",\n  \"status\": \"queued\",\n  \"progress\": null,\n  \"partial\": false,\n  \"error\": null,\n  \"queue_position\": 2,\n  \"created_at\": \"2026-08-04T12:00:00.000Z\",\n  \"updated_at\": \"2026-08-04T12:00:00.000Z\"\n}"
+            },
+            {
+              "name": "200 Failed",
+              "originalRequest": {
+                "method": "GET",
+                "url": "{{baseUrl}}/api/v1/jobs/{{job_id}}"
+              },
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "content-type",
+                  "value": "application/json"
+                }
+              ],
+              "cookie": [],
+              "body": "{\n  \"id\": \"9f0e1d2c-3b4a-5c6d-7e8f-9a0b1c2d3e4f\",\n  \"report_id\": \"9f0e1d2c-3b4a-5c6d-7e8f-9a0b1c2d3e4f\",\n  \"status\": \"failed\",\n  \"progress\": null,\n  \"partial\": false,\n  \"error\": \"LLM extraction failed: model is unreachable\",\n  \"queue_position\": null,\n  \"created_at\": \"2026-08-04T12:00:00.000Z\",\n  \"updated_at\": \"2026-08-04T12:01:00.000Z\"\n}"
+            }
+          ]
         }
       ]
     }
