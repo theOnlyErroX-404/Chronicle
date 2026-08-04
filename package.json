@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "eval:golden": "tsx evaluation/run.ts"
+    "eval:golden": "tsx evaluation/run.ts",
+    "postman:sync": "tsx --env-file=.env scripts/postman-sync.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
