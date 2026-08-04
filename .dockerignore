@@ -1,0 +1,14 @@
+.git
+.github
+.next
+node_modules
+coverage
+PLAN.md
+README.md
+.env
+.env.*.local
+*.tsbuildinfo
+Dockerfile
+.dockerignore
+tests
+evaluation

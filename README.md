@@ -64,9 +64,17 @@ development only when `NODE_ENV` is not production.
 
 ## Quality
 
-- `npm test` (vitest), `npm run typecheck`, `npm run lint` — all green (77 tests).
+- `npm test` (vitest), `npm run typecheck`, `npm run lint` — all green (154 tests).
 - **Golden-set eval** (entity vs relationship scored separately, per the architecture
   blueprint's quality gate): `npm run eval:golden`. Reports the active model/endpoints.
+- CI runs the same gates on every push/PR (`.github/workflows/ci.yml`); CodeQL scans weekly.
+
+## API clients
+
+- **Postman**: import `postman/Chronicle.postman_collection.json` +
+  `postman/Chronicle.postman_environment.json`. Set `apiToken` to match `CHRONICLE_API_TOKEN`
+  (leave empty locally); `baseUrl` defaults to `http://127.0.0.1:3210`. The create-report
+  requests store the returned `report_id`/`job_id` for the polling requests.
 
 ## Status vs the blueprint
 
