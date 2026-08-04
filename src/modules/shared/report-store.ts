@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ExtractionResult, Graph, ReportStatus } from "@/modules/shared/contracts";
+import type { Correction, ExtractionResult, Graph, ReportStatus } from "@/modules/shared/contracts";
 import { config } from "@/lib/config";
 import { createPostgresReportStore } from "@/modules/persistence/postgres-report-store";
 
@@ -18,6 +18,8 @@ export type ReportRecord = {
   extraction?: ExtractionResult;
   graph?: Graph;
   stixBundle?: Record<string, unknown>;
+  // Human-in-the-loop corrections, append-only, newest last.
+  feedback?: Correction[];
 };
 
 type NewReport = Pick<ReportRecord, "sourceType" | "sourceUrl" | "filename">;

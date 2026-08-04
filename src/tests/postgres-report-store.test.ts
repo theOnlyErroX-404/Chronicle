@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Prisma, type Report as ReportRow } from "@prisma/client";
 import { createPostgresReportStore, type ReportDb } from "@/modules/persistence/postgres-report-store";
-import type { ExtractionResult, Graph } from "@/modules/shared/contracts";
+import type { Correction, ExtractionResult, Graph } from "@/modules/shared/contracts";
 
 // In-memory fake of the Prisma report delegate: same merge semantics (undefined
 // keys skipped by Prisma, but the store pre-normalizes undefined -> null), so
@@ -27,6 +27,7 @@ const db: ReportDb = {
       extraction: null,
       graph: null,
       stixBundle: null,
+      feedback: null,
     };
     rows.set(d.id, row);
     return row;
@@ -96,5 +97,19 @@ describe("PostgresReportStore (fake Prisma delegate)", () => {
   it("throws the same not-found message as the in-memory store on a missing update", async () => {
     const store = createPostgresReportStore(db);
     await expect(store.update("missing", { status: "done" })).rejects.toThrow("Report missing was not found.");
+  });
+
+  it("round-trips feedback corrections", async () => {
+    const store = createPostgresReportStore(db);
+    const report = await store.create({ sourceType: "url", sourceUrl: "https://example.com/3" });
+    const feedback: Correction[] = [
+      { id: "c1", targetType: "entity", targetId: "node-1", action: "reject", createdAt: "2026-08-05T00:00:00.000Z" },
+      { id: "c2", targetType: "relationship", targetId: "edge-1", action: "correct", correctedValue: { type: "uses" }, createdAt: "2026-08-05T00:00:01.000Z" },
+    ];
+    await store.update(report.id, { feedback });
+
+    const stored = await store.get(report.id);
+    expect(stored?.feedback).toEqual(feedback);
+    expect(stored?.feedback).toHaveLength(2);
   });
 });
