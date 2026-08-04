@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Durable form of the in-memory ReportRecord. JSONB columns carry the heavy
+// structured payloads (extraction candidates, graph, STIX bundle) so the Phase 2
+// sub-phases (Neo4j, feedback, timeline, ATT&CK) extend beside this row rather
+// than reshaping it. A separate Job table is deliberately NOT added yet: BullMQ
+// (2-B) keeps its own job records in Redis, and job status already lives on the
+// report row — a second table now would be speculative.
+model Report {
+  id           String   @id
+  sourceType   String   @map("source_type")
+  sourceUrl    String?  @map("source_url")
+  filename     String?
+  status       String
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  errorMessage String?  @map("error_message")
+  progress     String?
+  partial      Boolean? @default(false)
+  rawText      String?  @map("raw_text")
+  extraction   Json?
+  graph        Json?
+  stixBundle   Json?    @map("stix_bundle")
+
+  @@map("reports")
+}

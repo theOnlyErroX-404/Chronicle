@@ -2,38 +2,38 @@ import { describe, expect, it } from "vitest";
 import { createReportStore } from "@/modules/shared/report-store";
 
 describe("report store eviction", () => {
-  it("evicts the oldest non-active report when the cap is exceeded", () => {
+  it("evicts the oldest non-active report when the cap is exceeded", async () => {
     const store = createReportStore(2);
-    const first = store.create({ sourceType: "url", sourceUrl: "https://example.com/1" });
-    const second = store.create({ sourceType: "url", sourceUrl: "https://example.com/2" });
-    store.update(first.id, { status: "done" });
-    store.update(second.id, { status: "done" });
-    const third = store.create({ sourceType: "url", sourceUrl: "https://example.com/3" });
+    const first = await store.create({ sourceType: "url", sourceUrl: "https://example.com/1" });
+    const second = await store.create({ sourceType: "url", sourceUrl: "https://example.com/2" });
+    await store.update(first.id, { status: "done" });
+    await store.update(second.id, { status: "done" });
+    const third = await store.create({ sourceType: "url", sourceUrl: "https://example.com/3" });
 
-    expect(store.get(first.id)).toBeUndefined();
-    expect(store.get(second.id)).toBeDefined();
-    expect(store.get(third.id)).toBeDefined();
+    expect(await store.get(first.id)).toBeUndefined();
+    expect(await store.get(second.id)).toBeDefined();
+    expect(await store.get(third.id)).toBeDefined();
   });
 
-  it("never evicts a queued or processing report", () => {
+  it("never evicts a queued or processing report", async () => {
     const store = createReportStore(2);
-    const queued = store.create({ sourceType: "url", sourceUrl: "https://example.com/queued" });
-    const processing = store.create({ sourceType: "url", sourceUrl: "https://example.com/processing" });
-    store.update(processing.id, { status: "extracting" });
-    const third = store.create({ sourceType: "url", sourceUrl: "https://example.com/3" });
+    const queued = await store.create({ sourceType: "url", sourceUrl: "https://example.com/queued" });
+    const processing = await store.create({ sourceType: "url", sourceUrl: "https://example.com/processing" });
+    await store.update(processing.id, { status: "extracting" });
+    const third = await store.create({ sourceType: "url", sourceUrl: "https://example.com/3" });
 
-    expect(store.get(queued.id)).toBeDefined();
-    expect(store.get(processing.id)).toBeDefined();
-    expect(store.get(third.id)).toBeDefined();
+    expect(await store.get(queued.id)).toBeDefined();
+    expect(await store.get(processing.id)).toBeDefined();
+    expect(await store.get(third.id)).toBeDefined();
   });
 
-  it("evicts failed reports before terminal ones of the same age order", () => {
+  it("evicts failed reports before terminal ones of the same age order", async () => {
     const store = createReportStore(1);
-    const failed = store.create({ sourceType: "url", sourceUrl: "https://example.com/failed" });
-    store.update(failed.id, { status: "failed" });
-    const next = store.create({ sourceType: "url", sourceUrl: "https://example.com/next" });
+    const failed = await store.create({ sourceType: "url", sourceUrl: "https://example.com/failed" });
+    await store.update(failed.id, { status: "failed" });
+    const next = await store.create({ sourceType: "url", sourceUrl: "https://example.com/next" });
 
-    expect(store.get(failed.id)).toBeUndefined();
-    expect(store.get(next.id)).toBeDefined();
+    expect(await store.get(failed.id)).toBeUndefined();
+    expect(await store.get(next.id)).toBeDefined();
   });
 });

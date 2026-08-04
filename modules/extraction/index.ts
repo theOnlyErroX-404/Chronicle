@@ -116,7 +116,9 @@ export const capEvidence = (extraction: ExtractionResult, maxChars = MAX_EVIDENC
 
 export type ExtractionProgress = { current: number; total: number };
 export type ExtractOptions = {
-  onProgress?: (progress: ExtractionProgress) => void;
+  // Async so durable backends can persist progress in order; callers that
+  // don't care (e.g. in-memory) may ignore the returned promise.
+  onProgress?: (progress: ExtractionProgress) => void | Promise<void>;
   breaker?: CircuitBreaker;
   maxChars?: number;
 };
@@ -143,7 +145,9 @@ const withRetry = async <T>(operation: () => Promise<T>, breaker?: CircuitBreake
 export const extractCandidates = async (text: string, client = getLlmClient(), options: ExtractOptions = {}): Promise<ExtractionResult> => {
   const chunks = chunkReportText(text, options.maxChars);
   const totalPasses = chunks.length * 2;
-  const reportProgress = (done: number) => options.onProgress?.({ current: done, total: totalPasses });
+  const reportProgress = async (done: number) => {
+    await options.onProgress?.({ current: done, total: totalPasses });
+  };
 
   const entitiesByChunk: ExtractedEntity[][] = [];
   const partial: ExtractionResult = { entities: [], relationships: [] };
@@ -160,7 +164,7 @@ export const extractCandidates = async (text: string, client = getLlmClient(), o
   // Deliberately sequential in Phase 1: modest local Ollama hardware normally
   // handles one request well, and hosted free tiers rate-limit bursts.
   for (let index = 0; index < chunks.length; index += 1) {
-    reportProgress(index + 1);
+    await reportProgress(index + 1);
     try {
       entitiesByChunk.push(await withRetry(() => client.extractEntities(chunks[index]), options.breaker));
     } catch (error) {
@@ -181,7 +185,7 @@ export const extractCandidates = async (text: string, client = getLlmClient(), o
   // schema enum covers every entity in the report (cross-chunk links included).
   const allRelationships: ExtractedRelationship[] = [];
   for (let index = 0; index < chunks.length; index += 1) {
-    reportProgress(chunks.length + index + 1);
+    await reportProgress(chunks.length + index + 1);
     try {
       const found = await withRetry(() => client.extractRelationships(chunks[index], entities), options.breaker);
       allRelationships.push(...found);

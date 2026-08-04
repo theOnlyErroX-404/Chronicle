@@ -65,6 +65,12 @@ export const config = {
   // currently queued/processing is evicted so a long-running server never grows
   // without bound. Active reports are never evicted.
   reportStoreMaxItems: positiveInteger(process.env.REPORT_STORE_MAX_ITEMS, 100),
+  // Phase 2 persistence seam: "memory" (default, bounded in-process store) or
+  // "postgres" (durable via Prisma). Postgres requires DATABASE_URL.
+  reportStoreBackend: process.env.REPORT_STORE_BACKEND === "postgres" ? "postgres" : "memory",
+  // Postgres connection string (prisma uses env("DATABASE_URL") directly for
+  // migrations; this mirrors it for the app-side config validation).
+  databaseUrl: process.env.DATABASE_URL ?? "",
   // Extraction tuning. On CPU-only inference a 3B model is far slower than a
   // hosted API: chunks must stay small and per-call timeouts generous, and it
   // must stay under Ollama's ~5 minute server-side request cap.
