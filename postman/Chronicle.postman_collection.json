@@ -1,0 +1,181 @@
+{
+  "info": {
+    "_postman_id": "8f2c1d3e-9a4b-4c5d-8e6f-0a1b2c3d4e5f",
+    "name": "Chronicle ThreatGraph",
+    "description": "API for Chronicle: submit threat-report URLs or PDFs and poll the resulting knowledge graph / STIX bundle. Authentication uses `Authorization: Bearer <token>` (only required when `CHRONICLE_API_TOKEN` is set on the server).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:3210",
+      "type": "string"
+    },
+    {
+      "key": "apiToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "report_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "job_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{apiToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Reports",
+      "item": [
+        {
+          "name": "Create report from URL",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://example.com/threat-report\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports"]
+            },
+            "description": "Submit a threat-report URL. Returns 202 with `report_id`/`job_id`; processing continues in the background."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 202 Accepted', () => pm.response.to.have.status(202));",
+                  "const body = pm.response.json();",
+                  "if (body.report_id) {",
+                  "  pm.collectionVariables.set('report_id', body.report_id);",
+                  "  pm.collectionVariables.set('job_id', body.job_id ?? body.report_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Upload PDF report",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "/path/to/report.pdf"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports"]
+            },
+            "description": "Upload a PDF threat report (multipart/form-data, field name `file`). Returns 202 with `report_id`."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('returns 202 Accepted', () => pm.response.to.have.status(202));",
+                  "const body = pm.response.json();",
+                  "if (body.report_id) {",
+                  "  pm.collectionVariables.set('report_id', body.report_id);",
+                  "  pm.collectionVariables.set('job_id', body.job_id ?? body.report_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get report",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "{{report_id}}"]
+            },
+            "description": "Poll report status (`queued` → `ingesting` → `extracting` → `modeling` → `done` | `failed`)."
+          }
+        },
+        {
+          "name": "Get report graph",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}/graph",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "{{report_id}}", "graph"]
+            },
+            "description": "Interactive knowledge graph (nodes/edges). 409 until the graph is ready."
+          }
+        },
+        {
+          "name": "Get report STIX bundle",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}/stix",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "{{report_id}}", "stix"]
+            },
+            "description": "STIX 2.1-lite bundle as a JSON download. 409 until ready."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Jobs",
+      "item": [
+        {
+          "name": "Get job",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/jobs/{{job_id}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "jobs", "{{job_id}}"]
+            },
+            "description": "Job detail: status, progress, `queue_position`, `partial`, and error message on failure."
+          }
+        }
+      ]
+    }
+  ]
+}
