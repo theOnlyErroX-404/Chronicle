@@ -4,6 +4,18 @@ All notable changes to Chronicle are documented here, newest first. The project
 has no tagged releases yet — sections are anchored to the plan phases in
 `PLAN.md`. Version tags are a planned 2-G (deploy) item.
 
+## 2026-08-05 — Web connection fixes + auth token rotation
+
+- **Fixed** `next start` not working with `output: standalone` (it never loaded `.env`
+  and served stale state → persistent 401s). New `npm run start` runs
+  `scripts/serve.mjs`: assembles `.next/standalone` (copies `.next/static` + `public`)
+  and spawns `node --env-file=.env server.js` — shell-safe env loading, default
+  `127.0.0.1:3210`.
+- **Fixed** `node --env-file` truncating unquoted values at `#`; rotated
+  `CHRONICLE_API_TOKEN` to a clean 516-bit base64url token (old token's
+  `#`/`$`/`@`/`%` chars were fragile across env/header parsers). Verified auth on
+  both `npm run start` and `npm run dev`: no token → 401, wrong → 401, correct → 202.
+
 ## 2026-08-05 — Phase 2: timeline reconstruction (2-E)
 
 - **Added** deterministic timeline extraction (`src/modules/timeline/`): temporal

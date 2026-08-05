@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/serve.mjs",
     "worker": "tsx src/modules/processing/worker.ts",
     "lint": "eslint .",
     "prettier": "prettier --write .",

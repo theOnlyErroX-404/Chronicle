@@ -58,8 +58,13 @@ candidates.
    `npx prisma migrate deploy`.
 4. `npm install`, then `npm run dev`, and visit `http://localhost:3000`. Run the durable
    worker in a second terminal with `npm run worker` when `JOB_QUEUE_BACKEND=redis`.
+5. Production-mode server (standalone build): `npm run build && npm run start`
+   (`scripts/serve.mjs` → `node --env-file=.env server.js`, default
+   `http://127.0.0.1:3210`). Note `next start` is NOT supported with
+   `output: standalone` — use the `start` script.
 
-For a deployed environment, set `CHRONICLE_API_TOKEN` and send
+For a deployed environment, set `CHRONICLE_API_TOKEN` (a random string — e.g.
+`openssl rand -base64 48 | tr '+/' '-_'`) and send
 `Authorization: Bearer <token>` to the API. The local UI permits unauthenticated
 development only when `NODE_ENV` is not production.
 
