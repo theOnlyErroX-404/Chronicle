@@ -68,6 +68,12 @@ const apiError = async (response: Response) => {
 export function ReportWorkbench() {
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [token, setToken] = useState(
+    () =>
+      typeof window === 'undefined'
+        ? ''
+        : (localStorage.getItem('chronicle_api_token') ?? ''),
+  );
   const [job, setJob] = useState<Job | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [message, setMessage] = useState(
@@ -75,9 +81,15 @@ export function ReportWorkbench() {
   );
 
   useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem('chronicle_api_token', token);
+  }, [token]);
+
+  useEffect(() => {
     if (!job || ['done', 'failed'].includes(job.status)) return;
     const timer = window.setTimeout(async () => {
-      const response = await fetch(`/api/v1/jobs/${job.id}`);
+      const response = await fetch(`/api/v1/jobs/${job.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (!response.ok) return setMessage(await apiError(response));
       const next = (await response.json()) as {
         id: string;
@@ -94,21 +106,27 @@ export function ReportWorkbench() {
       );
       const finished = next.status === 'done' || (next.status === 'failed' && next.partial);
       if (finished) {
-        const graphResponse = await fetch(`/api/v1/reports/${next.id}/graph`);
+        const graphResponse = await fetch(`/api/v1/reports/${next.id}/graph`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         if (graphResponse.ok) setGraph((await graphResponse.json()) as Graph);
       }
     }, 1_200);
     return () => window.clearTimeout(timer);
-  }, [job]);
+  }, [job, token]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!url.trim() && !file) return setMessage('Choose either a public URL or a PDF.');
     setGraph(null);
     setMessage('Submitting report…');
+    const auth: Record<string, string> = token
+      ? { Authorization: `Bearer ${token}` }
+      : {};
     const response = file
       ? await fetch('/api/v1/reports', {
           method: 'POST',
+          headers: auth,
           body: (() => {
             const data = new FormData();
             data.set('file', file);
@@ -117,13 +135,18 @@ export function ReportWorkbench() {
         })
       : await fetch('/api/v1/reports', {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers:
+            token === ''
+              ? { 'content-type': 'application/json' }
+              : { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
           body: JSON.stringify({ url }),
         });
     if (!response.ok) return setMessage(await apiError(response));
     const created = (await response.json()) as { report_id: string; status: string };
     setJob({ id: created.report_id, status: created.status });
-    setMessage('Report accepted. The local Ollama model is now analyzing it.');
+    setMessage(
+      'Report accepted. Analysis is in progress — the graph appears when it finishes.',
+    );
   };
 
   return (
@@ -150,6 +173,15 @@ export function ReportWorkbench() {
             setFile(event.target.files?.[0] ?? null);
             setUrl('');
           }}
+        />
+        <label htmlFor="api-token">API token (required when NODE_ENV is production)</label>
+        <input
+          id="api-token"
+          value={token}
+          onChange={(event) => setToken(event.target.value)}
+          placeholder={`CHRONICLE_API_TOKEN from .env`}
+          type="password"
+          autoComplete="off"
         />
         <button type="submit" disabled={Boolean(job && !['done', 'failed'].includes(job.status))}>
           Analyze report
