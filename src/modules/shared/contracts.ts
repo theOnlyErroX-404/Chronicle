@@ -158,3 +158,26 @@ export const AttckMappingSchema = z.object({
 });
 
 export type AttckMapping = z.infer<typeof AttckMappingSchema>;
+
+// Timeline (architecture §2 Timeline context, 2-E): temporal expressions
+// parsed deterministically from the report text, resolved to a concrete date
+// where possible, ordered chronologically. `date` is the resolved date and
+// matches `precision` (day → YYYY-MM-DD, month → YYYY-MM, year → YYYY);
+// `matched` is the raw text span that produced the event; `label` is the
+// surrounding sentence for analyst context. Relative expressions ("last week",
+// "3 days later") resolve against an anchor date (earliest exact date in the
+// text, falling back to the report's creation time).
+export const TimelineEventSchema = z.object({
+  id: z.string().min(1),
+  date: z
+    .string()
+    .min(4)
+    .max(10)
+    .regex(/^\d{4}(-\d{2})?(-\d{2})?$/),
+  precision: z.enum(['day', 'month', 'year']),
+  matched: z.string().min(1).max(100),
+  label: z.string().min(1).max(1_000),
+  confidence: z.number().min(0).max(1),
+});
+
+export type TimelineEvent = z.infer<typeof TimelineEventSchema>;

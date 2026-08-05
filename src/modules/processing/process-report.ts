@@ -6,6 +6,7 @@ import {
 } from '@/modules/extraction';
 import { ingestReport, type IngestionSource } from '@/modules/ingestion';
 import { matchExplicitTechniques } from '@/modules/attck';
+import { extractTimelineEvents } from '@/modules/timeline';
 import {
   buildGraph,
   buildStixLiteBundle,
@@ -50,12 +51,16 @@ export const processReport = async (reportId: string, source: IngestionSource) =
       progress: 'ingesting',
     });
     const rawText = await ingestReport(source);
-    // ATT&CK mapping needs only the raw text (no LLM), so compute it here — it
-    // then survives a later partial-extraction failure instead of being lost.
+    // ATT&CK mapping and the timeline need only the raw text (no LLM), so
+    // compute both here — they then survive a later partial-extraction failure
+    // instead of being lost. Timeline relative terms anchor to the earliest
+    // exact date in the text (fallback: submission time).
     const attck = matchExplicitTechniques(rawText);
+    const timeline = extractTimelineEvents(rawText);
     await reportStore.update(reportId, {
       rawText,
       attck,
+      timeline,
       status: 'extracting',
       progress: 'extracting',
     });

@@ -426,6 +426,28 @@
             "description": "Offline MITRE ATT&CK mapping for a finished report: matched techniques (T####), groups (G####), software (S####), and campaigns (C####) with names and aliases. Matching is local and deterministic (no LLM); the corpus derives from the official MITRE v19.1 STIX bundle.\n\nReturns **200** with:\n- `{ \"source\": \"explicit\", \"matches\": [...] }`\n- each match carries the ATT&CK id, name, aliases, and the matched label/text span\n\nErrors:\n- **404** unknown `report_id`\n- **409** mapping not ready yet"
           },
           "response": []
+        },
+        {
+          "name": "Get report timeline",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}/timeline",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "reports",
+                "{{report_id}}",
+                "timeline"
+              ]
+            },
+            "description": "Chronological timeline for a finished report: temporal expressions parsed deterministically from the text, resolved to concrete dates, ordered ascending. Relative terms (\"last week\", \"3 days later\") resolve against the earliest exact date in the text.\n\nReturns **200** with an ordered array of events:\n- `{ \"id\", \"date\", \"precision\": \"day\"|\"month\"|\"year\", \"matched\", \"label\", \"confidence\" }`\n- `date` matches `precision` (day → YYYY-MM-DD, month → YYYY-MM, year → YYYY)\n\nErrors:\n- **404** unknown `report_id`\n- **409** timeline not ready yet"
+          },
+          "response": []
         }
       ]
     },

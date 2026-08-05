@@ -5,6 +5,7 @@ import type {
   ExtractionResult,
   Graph,
   ReportStatus,
+  TimelineEvent,
 } from '@/modules/shared/contracts';
 import { config } from '@/lib/config';
 import { createPostgresReportStore } from '@/modules/persistence/postgres-report-store';
@@ -29,6 +30,8 @@ export type ReportRecord = {
   // MITRE ATT&CK mappings derived from the raw text (techniques, groups,
   // software, campaigns), newest run replacing the previous result.
   attck?: AttckMapping[];
+  // Chronological timeline of temporal expressions resolved from the raw text.
+  timeline?: TimelineEvent[];
 };
 
 type NewReport = Pick<ReportRecord, 'sourceType' | 'sourceUrl' | 'filename'>;

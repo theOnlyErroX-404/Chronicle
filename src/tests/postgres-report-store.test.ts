@@ -5,7 +5,13 @@ import {
   createPostgresReportStore,
   type ReportDb,
 } from '@/modules/persistence/postgres-report-store';
-import type { AttckMapping, Correction, ExtractionResult, Graph } from '@/modules/shared/contracts';
+import type {
+  AttckMapping,
+  Correction,
+  ExtractionResult,
+  Graph,
+  TimelineEvent,
+} from '@/modules/shared/contracts';
 import { config } from '@/lib/config';
 
 // In-memory fake of the Prisma report delegate: same merge semantics (undefined
@@ -40,6 +46,7 @@ const db: ReportDb = {
       stixBundle: null,
       feedback: null,
       attck: null,
+      timeline: null,
     };
     rows.set(d.id, row);
     return row;
@@ -224,6 +231,16 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresReportStore (live)', () => {
         matchedText: 'T1059',
       },
     ];
+    const timeline: TimelineEvent[] = [
+      {
+        id: 't1',
+        date: '2024-03-05',
+        precision: 'day',
+        matched: 'March 5, 2024',
+        label: 'Observed on March 5, 2024.',
+        confidence: 1,
+      },
+    ];
     await store.update(created.id, {
       status: 'done',
       progress: 'done',
@@ -232,6 +249,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresReportStore (live)', () => {
       stixBundle,
       feedback,
       attck,
+      timeline,
     });
 
     const stored = await store.get(created.id);
@@ -241,6 +259,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresReportStore (live)', () => {
     expect(stored?.stixBundle).toEqual(stixBundle);
     expect(stored?.feedback).toEqual(feedback);
     expect(stored?.attck).toEqual(attck);
+    expect(stored?.timeline).toEqual(timeline);
   });
 
   it('maps a missing update to the not-found message', async () => {

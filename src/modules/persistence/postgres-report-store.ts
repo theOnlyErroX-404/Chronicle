@@ -8,6 +8,7 @@ import type {
   ExtractionResult,
   Graph,
   ReportStatus,
+  TimelineEvent,
 } from '@/modules/shared/contracts';
 import type { ReportRecord } from '@/modules/shared/report-store';
 
@@ -51,6 +52,7 @@ const fromRow = (row: ReportRow): ReportRecord => ({
   stixBundle: (row.stixBundle as Record<string, unknown> | null) ?? undefined,
   feedback: (row.feedback as Correction[] | null) ?? undefined,
   attck: (row.attck as AttckMapping[] | null) ?? undefined,
+  timeline: (row.timeline as TimelineEvent[] | null) ?? undefined,
 });
 
 // The in-memory store spreads the patch over the current record, so an

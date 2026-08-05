@@ -4,6 +4,19 @@ All notable changes to Chronicle are documented here, newest first. The project
 has no tagged releases yet — sections are anchored to the plan phases in
 `PLAN.md`. Version tags are a planned 2-G (deploy) item.
 
+## 2026-08-05 — Phase 2: timeline reconstruction (2-E)
+
+- **Added** deterministic timeline extraction (`src/modules/timeline/`): temporal
+  expressions parsed from the report text — ISO dates, written dates, month-year,
+  year-only, and relative terms ("yesterday", "last week", "N days later") —
+  resolved to concrete dates (relative terms anchor to the earliest exact date in
+  the text) and ordered chronologically. Offline, no LLM call.
+- **Added** `timeline` JSONB column + migration `20260805170000_add_report_timeline`,
+  store round-trips (memory + Postgres), pipeline wiring in `process-report.ts`
+  (computed alongside ATT&CK, survives partial-extraction failures).
+- **Added** `GET /api/v1/reports/{id}/timeline` (404 unknown / 409 not ready yet),
+  Postman collection entry + sync.
+
 ## 2026-08-05 — Security audit remediation (semgrep / bearer / trivy / gitleaks)
 
 - **Added** `bearer.yml` documenting the 2 accepted rule classes (non-PII log

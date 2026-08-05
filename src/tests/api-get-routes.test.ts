@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { GET as getReport } from '@/app/api/v1/reports/[id]/route';
 import { GET as getGraph } from '@/app/api/v1/reports/[id]/graph/route';
 import { GET as getStix } from '@/app/api/v1/reports/[id]/stix/route';
+import { GET as getTimeline } from '@/app/api/v1/reports/[id]/timeline/route';
 import { GET as getJob } from '@/app/api/v1/jobs/[id]/route';
+import type { TimelineEvent } from '@/modules/shared/contracts';
 import type { ReportRecord } from '@/modules/shared/report-store';
 
 vi.mock('@/modules/shared/auth', () => ({ requireApiToken: vi.fn() }));
@@ -69,6 +71,29 @@ describe('GET routes', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ type: 'bundle' });
     expect(response.headers.get('content-disposition')).toContain('chronicle-r1.stix.json');
+  });
+
+  it('timeline returns 409 when not ready', async () => {
+    mockReports.set('r1', baseReport('r1'));
+    const response = await getTimeline(get('r1'), { params: Promise.resolve({ id: 'r1' }) });
+    expect(response.status).toBe(409);
+  });
+
+  it('timeline returns the chronological events once ready', async () => {
+    const timeline: TimelineEvent[] = [
+      {
+        id: 't1',
+        date: '2024-03-05',
+        precision: 'day',
+        matched: 'March 5, 2024',
+        label: 'Observed on March 5, 2024.',
+        confidence: 1,
+      },
+    ];
+    mockReports.set('r1', baseReport('r1', { timeline }));
+    const response = await getTimeline(get('r1'), { params: Promise.resolve({ id: 'r1' }) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(timeline);
   });
 
   it('jobs returns queue_position counting the running job', async () => {

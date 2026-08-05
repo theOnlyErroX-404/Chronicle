@@ -33,6 +33,7 @@ model Report {
   stixBundle   Json?    @map("stix_bundle")
   feedback     Json?
   attck        Json?
+  timeline     Json?
 
   @@index([status])
   @@index([createdAt])
