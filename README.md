@@ -18,7 +18,14 @@ implementing the first phases of [`Chronicle-architecture.md`](Chronicle-archite
      link between entities mentioned in different chunks is expressible; then dedup and
      endpoint canonicalization.
 3. **Knowledge modeling** — entity resolution, graph assembly, STIX 2.1-lite export.
-4. **Graph/API + UI** — async `202` + polling API, graph/STIX endpoints, Cytoscape render.
+4. **Persistence & queue** — Postgres (Prisma) report store and a durable BullMQ/Redis
+   job queue behind the `ReportStore` / `JobQueue` seams; a separate `npm run worker`
+   process consumes jobs (survives app restarts).
+5. **Feedback (human-in-the-loop)** — `POST /api/v1/reports/{id}/feedback` accepts
+   accept/reject/correct corrections against graph entities and relationships; they're
+   stored on the report and replayed through the graph/stix payloads.
+6. **Graph/API + UI** — async `202` + polling API, graph/STIX/feedback endpoints,
+   Cytoscape render.
 
 All LLM output is JSON-schema-constrained and validated with **Zod**; malformed output is
 rejected and retried, never coerced. Extraction results remain analyst-reviewable
@@ -41,7 +48,13 @@ candidates.
 1. Copy `.env.example` to `.env` and adjust values.
 2. Start Ollama and pull the default model: `ollama pull qwen2.5:3b` (or set
    `LLM_PROVIDER=openai` with your hosted endpoints — see `.env.example`).
-3. `npm install`, then `npm run dev`, and visit `http://localhost:3000`.
+3. Optional but recommended (Phase 2 persistence): run Postgres + Redis containers:
+   `docker run -d --name chronicle-postgres -e POSTGRES_USER=chronicle -e POSTGRES_PASSWORD=chronicle -e POSTGRES_DB=chronicle -p 127.0.0.1:5432:5432 postgres:17-alpine` and
+   `docker run -d --name chronicle-redis -p 127.0.0.1:6379:6379 redis:7-alpine`; then set
+   `REPORT_STORE_BACKEND=postgres` and `JOB_QUEUE_BACKEND=redis` in `.env` and run
+   `npx prisma migrate deploy`.
+4. `npm install`, then `npm run dev`, and visit `http://localhost:3000`. Run the durable
+   worker in a second terminal with `npm run worker` when `JOB_QUEUE_BACKEND=redis`.
 
 For a deployed environment, set `CHRONICLE_API_TOKEN` and send
 `Authorization: Bearer <token>` to the API. The local UI permits unauthenticated
@@ -61,13 +74,26 @@ development only when `NODE_ENV` is not production.
 | `EXTRACTION_FORMAT` | `schema` | JSON-schema constrained (`schema`) vs loose `json` |
 | `LLM_TIMEOUT_MS` | `180000` | Per-call timeout |
 | `MAX_REPORT_BYTES` / `URL_FETCH_TIMEOUT_MS` / `MAX_REDIRECTS` | `10MB` / `15s` / `3` | Ingestion safety limits |
+| `REPORT_STORE_BACKEND` | `memory` | `memory` or `postgres` (Prisma; requires `DATABASE_URL`) |
+| `JOB_QUEUE_BACKEND` | `memory` | `memory` or `redis` (BullMQ; requires `REDIS_URL`) |
+
+## API
+
+`POST /api/v1/reports` (multipart PDF or `{"url": ...}`) → `202` + `job_id`;
+`GET /api/v1/jobs/{id}` polls `pending → extracting → done/failed`;
+`GET /api/v1/reports/{id}`, `/{id}/graph`, `/{id}/stix` return results once done;
+`POST /api/v1/reports/{id}/feedback` records analyst corrections. All endpoints require
+`Authorization: Bearer <token>` when `CHRONICLE_API_TOKEN` is set.
 
 ## Quality
 
-- `npm test` (vitest), `npm run typecheck`, `npm run lint` — all green (154 tests).
+- `npm test` (vitest), `npm run typecheck`, `npm run lint`, `npm run prettier:check`,
+  `npm run deps:check` — all green (173 tests locally; 176 in CI, where live
+  Postgres/Redis integration tests run against service containers).
 - **Golden-set eval** (entity vs relationship scored separately, per the architecture
   blueprint's quality gate): `npm run eval:golden`. Reports the active model/endpoints.
-- CI runs the same gates on every push/PR (`.github/workflows/ci.yml`); CodeQL scans weekly.
+- CI runs the same gates on every push/PR (`.github/workflows/ci.yml`), with real
+  Postgres 17 + Redis 7 service containers for the integration tests; CodeQL scans weekly.
 
 ## API clients
 
@@ -81,12 +107,19 @@ development only when `NODE_ENV` is not production.
 
 ## Status vs the blueprint
 
-Implemented: Phase 0 (GPU decision → CPU-only), Phase A (reliability/queue/progress),
-Phase C (SSRF pinning, Zod at the boundary), the golden-set harness, the two-phase
-cross-chunk extraction, the hosted-provider seam, and multi-endpoint failover.
+**Phase 1 (MVP) — complete:** URL/PDF ingestion, LLM entity + relationship extraction
+(via the `LlmClient` seam, Ollama `qwen2.5:3b` or any OpenAI-compatible endpoint),
+STIX 2.1-lite export, interactive Cytoscape graph, golden-set eval harness, SSRF
+pinning, Zod at the boundary.
 
-Deferred to Phase 2 (in-memory Phase 1): Postgres/Neo4j persistence, Redis + BullMQ
-durable jobs, ATT&CK mapping, timeline, feedback, ClamAV, and OpenTelemetry.
+**Phase 2 — core complete, backlog deferred:** Postgres (Prisma) persistence (2-A),
+Redis + BullMQ durable queue (2-B), human-feedback endpoint (2-F), bearer-token auth,
+CI integration tests against ephemeral Postgres/Redis.
+
+Deferred (tracked in PLAN.md): 2-C Neo4j, 2-D ATT&CK mapping, 2-E timeline, 2-G
+docker-compose + staging deployment, 2-H ClamAV, OpenTelemetry (YAGNI until metrics
+are needed). Backlog: PDF object storage, Redis-backed LLM cache, DR backups,
+structured JSON logging.
 
 ## License
 

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash } from 'node:crypto';
 
 // Small in-memory LRU. Extraction is deterministic (temperature 0, fixed seed),
 // so re-running the same chunk with the same prompt and model returns the same
@@ -34,4 +34,4 @@ export const createLlmCache = (maxEntries = 100) => {
 };
 
 export const llmCacheKey = (parts: Array<string | number>): string =>
-  createHash("sha256").update(parts.join("\u0000")).digest("hex");
+  createHash('sha256').update(parts.join('\u0000')).digest('hex');

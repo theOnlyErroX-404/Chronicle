@@ -1,8 +1,8 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["unpdf"],
-  output: "standalone",
+  serverExternalPackages: ['unpdf'],
+  output: 'standalone',
 };
 
 export default nextConfig;

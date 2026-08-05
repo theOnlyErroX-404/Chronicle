@@ -1,30 +1,30 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 export const EntityTypeSchema = z.enum([
-  "threat-actor",
-  "malware",
-  "tool",
-  "web-shell",
-  "vulnerability",
-  "indicator",
-  "sector",
-  "country",
-  "campaign",
-  "email",
-  "file-path",
+  'threat-actor',
+  'malware',
+  'tool',
+  'web-shell',
+  'vulnerability',
+  'indicator',
+  'sector',
+  'country',
+  'campaign',
+  'email',
+  'file-path',
 ]);
 
 export const RelationshipTypeSchema = z.enum([
-  "uses",
-  "exploits",
-  "targets",
-  "attributed-to",
-  "communicates-with",
-  "mitigated-by",
-  "executes",
-  "downloads",
-  "delivers",
-  "exfiltrates",
+  'uses',
+  'exploits',
+  'targets',
+  'attributed-to',
+  'communicates-with',
+  'mitigated-by',
+  'executes',
+  'downloads',
+  'delivers',
+  'exfiltrates',
 ]);
 
 // Single source of truth for the allowed values: JSON-schema prompts, the
@@ -89,12 +89,12 @@ export type Graph = z.infer<typeof GraphSchema>;
 export type GraphNode = z.infer<typeof GraphNodeSchema>;
 
 export const ReportStatusSchema = z.enum([
-  "queued",
-  "ingesting",
-  "extracting",
-  "modeling",
-  "done",
-  "failed",
+  'queued',
+  'ingesting',
+  'extracting',
+  'modeling',
+  'done',
+  'failed',
 ]);
 export type ReportStatus = z.infer<typeof ReportStatusSchema>;
 
@@ -103,11 +103,14 @@ export type ReportStatus = z.infer<typeof ReportStatusSchema>;
 // targetId refers to the graph node id (entity), edge id (relationship), or
 // technique mapping key; correctedValue carries the field overrides for
 // "correct" actions (e.g. { name: "..." } for an entity).
-export const CorrectionTargetSchema = z.enum(["entity", "relationship", "mapping"]);
-export const CorrectionActionSchema = z.enum(["accept", "reject", "correct"]);
+export const CorrectionTargetSchema = z.enum(['entity', 'relationship', 'mapping']);
+export const CorrectionActionSchema = z.enum(['accept', 'reject', 'correct']);
 
 // Value bounds keep each entry small; the 64KB request-body cap bounds the total.
-const CorrectionValueSchema = z.record(z.string().min(1).max(100), z.union([z.string().max(500), z.number().min(-1e9).max(1e9)]));
+const CorrectionValueSchema = z.record(
+  z.string().min(1).max(100),
+  z.union([z.string().max(500), z.number().min(-1e9).max(1e9)]),
+);
 
 export const CorrectionSchema = z.object({
   id: z.string().min(1),

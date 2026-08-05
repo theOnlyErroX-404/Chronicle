@@ -1,15 +1,19 @@
-import type { ExtractedEntity, ExtractedRelationship, ExtractionResult } from "@/modules/shared/contracts";
-import { normalizeName } from "@/modules/knowledge-modeling";
+import type {
+  ExtractedEntity,
+  ExtractedRelationship,
+  ExtractionResult,
+} from '@/modules/shared/contracts';
+import { normalizeName } from '@/modules/knowledge-modeling';
 
 export type GoldenEntity = {
-  type: ExtractedEntity["type"];
+  type: ExtractedEntity['type'];
   name: string;
   aliases?: string[];
 };
 
 export type GoldenRelationship = {
   source: string;
-  type: ExtractedRelationship["type"];
+  type: ExtractedRelationship['type'];
   target: string;
 };
 
@@ -51,7 +55,8 @@ export const buildAliasMap = (entities: GoldenEntity[]): Map<string, string> => 
   return map;
 };
 
-const canonicalize = (name: string, aliases: Map<string, string>) => aliases.get(normalizeName(name)) ?? normalizeName(name);
+const canonicalize = (name: string, aliases: Map<string, string>) =>
+  aliases.get(normalizeName(name)) ?? normalizeName(name);
 
 export const scoreSet = (matched: number, extracted: number, expected: number): SetScore => {
   const precision = extracted === 0 ? 0 : matched / extracted;
@@ -82,7 +87,11 @@ const countOneToOneMatches = <TExtracted, TExpected>(
   return matched;
 };
 
-export const scoreEntities = (extracted: ExtractedEntity[], golden: GoldenEntity[], aliases: Map<string, string>): SetScore => {
+export const scoreEntities = (
+  extracted: ExtractedEntity[],
+  golden: GoldenEntity[],
+  aliases: Map<string, string>,
+): SetScore => {
   const matches = (item: ExtractedEntity, gold: GoldenEntity) =>
     item.type === gold.type && canonicalize(item.name, aliases) === normalizeName(gold.name);
   const matched = countOneToOneMatches(extracted, golden, matches);
@@ -111,12 +120,15 @@ export const scoreReport = (golden: GoldenReport, extracted: ExtractionResult): 
   };
 };
 
-export const evaluate = async (golden: GoldenReport[], run: ExtractionRunner): Promise<EvaluationResult> => {
+export const evaluate = async (
+  golden: GoldenReport[],
+  run: ExtractionRunner,
+): Promise<EvaluationResult> => {
   const perReport: ReportScore[] = [];
   for (const report of golden) {
     perReport.push(scoreReport(report, await run(report.text)));
   }
-  const aggregate = (field: "entities" | "relationships"): SetScore => {
+  const aggregate = (field: 'entities' | 'relationships'): SetScore => {
     const totals = perReport.reduce(
       (acc, score) => ({
         matched: acc.matched + score[field].matched,
@@ -127,5 +139,5 @@ export const evaluate = async (golden: GoldenReport[], run: ExtractionRunner): P
     );
     return scoreSet(totals.matched, totals.extracted, totals.expected);
   };
-  return { perReport, entities: aggregate("entities"), relationships: aggregate("relationships") };
+  return { perReport, entities: aggregate('entities'), relationships: aggregate('relationships') };
 };

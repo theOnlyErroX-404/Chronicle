@@ -1,9 +1,9 @@
-import { randomUUID } from "node:crypto";
-import { Prisma, PrismaClient, type Report as ReportRow } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { config } from "@/lib/config";
-import type { Correction, ExtractionResult, Graph, ReportStatus } from "@/modules/shared/contracts";
-import type { ReportRecord } from "@/modules/shared/report-store";
+import { randomUUID } from 'node:crypto';
+import { Prisma, PrismaClient, type Report as ReportRow } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { config } from '@/lib/config';
+import type { Correction, ExtractionResult, Graph, ReportStatus } from '@/modules/shared/contracts';
+import type { ReportRecord } from '@/modules/shared/report-store';
 
 // Narrow persistence surface used by the store. The real Prisma report
 // delegate satisfies it; tests pass a hand-rolled fake so the store is
@@ -29,7 +29,7 @@ const getClient = (): PrismaClient => {
 
 const fromRow = (row: ReportRow): ReportRecord => ({
   id: row.id,
-  sourceType: row.sourceType as "url" | "pdf",
+  sourceType: row.sourceType as 'url' | 'pdf',
   sourceUrl: row.sourceUrl ?? undefined,
   filename: row.filename ?? undefined,
   status: row.status as ReportStatus,
@@ -56,15 +56,21 @@ const toPatch = (patch: Record<string, unknown>): Record<string, unknown> => {
   return data;
 };
 
-export const createPostgresReportStore = (db: ReportDb = getClient().report as unknown as ReportDb) => ({
-  async create(input: { sourceType: "url" | "pdf"; sourceUrl?: string; filename?: string }): Promise<ReportRecord> {
+export const createPostgresReportStore = (
+  db: ReportDb = getClient().report as unknown as ReportDb,
+) => ({
+  async create(input: {
+    sourceType: 'url' | 'pdf';
+    sourceUrl?: string;
+    filename?: string;
+  }): Promise<ReportRecord> {
     const row = await db.create({
       data: {
         id: randomUUID(),
         sourceType: input.sourceType,
         sourceUrl: input.sourceUrl ?? null,
         filename: input.filename ?? null,
-        status: "queued",
+        status: 'queued',
       },
     });
     return fromRow(row);
@@ -77,13 +83,16 @@ export const createPostgresReportStore = (db: ReportDb = getClient().report as u
 
   async update(
     id: string,
-    patch: Partial<Omit<ReportRecord, "id" | "createdAt" | "sourceType">>,
+    patch: Partial<Omit<ReportRecord, 'id' | 'createdAt' | 'sourceType'>>,
   ): Promise<ReportRecord> {
     try {
-      const row = await db.update({ where: { id }, data: toPatch(patch as Record<string, unknown>) });
+      const row = await db.update({
+        where: { id },
+        data: toPatch(patch as Record<string, unknown>),
+      });
       return fromRow(row);
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new Error(`Report ${id} was not found.`);
       }
       throw error;

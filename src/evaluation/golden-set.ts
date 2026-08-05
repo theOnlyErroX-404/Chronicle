@@ -1,7 +1,7 @@
-import { z } from "zod";
-import { EntityTypeSchema, RelationshipTypeSchema } from "@/modules/shared/contracts";
-import type { GoldenReport } from "@/evaluation/scoring";
-import goldenReportsData from "./golden-set.json";
+import { z } from 'zod';
+import { EntityTypeSchema, RelationshipTypeSchema } from '@/modules/shared/contracts';
+import type { GoldenReport } from '@/evaluation/scoring';
+import goldenReportsData from './golden-set.json';
 
 // The hand-labeled golden set for the architecture's Phase 1 quality gate
 // (§5, §6) lives in golden-set.json as pure data. This module is the loader:
