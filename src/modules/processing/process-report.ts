@@ -15,6 +15,16 @@ import { ChronicleError } from '@/modules/shared/errors';
 import { reportStore } from '@/modules/shared/report-store';
 
 export const processReport = async (reportId: string, source: IngestionSource) => {
+  // Log the message only, not the error object: errors can carry LLM/provider
+  // response detail and report excerpts that logs should not retain.
+  const logError = (context: string, error: unknown) =>
+    console.error(
+      '[report %s] %s:',
+      reportId,
+      context,
+      error instanceof Error ? error.message : error,
+    );
+
   const setProgress = async (text: string) => {
     await reportStore.update(reportId, { progress: text });
   };
@@ -22,11 +32,11 @@ export const processReport = async (reportId: string, source: IngestionSource) =
   const fail = async (error: unknown, partial = false) => {
     const safeMessage =
       error instanceof ChronicleError ? error.message : 'The report could not be fully processed.';
-    console.error(`[report ${reportId}] processing failed:`, error);
+    logError('processing failed', error);
     try {
       await reportStore.update(reportId, { status: 'failed', errorMessage: safeMessage, partial });
     } catch (storeError) {
-      console.error(`[report ${reportId}] failed to persist failure state:`, storeError);
+      logError('failed to persist failure state', storeError);
     }
   };
 
@@ -92,9 +102,9 @@ export const processReport = async (reportId: string, source: IngestionSource) =
           progress: undefined,
         });
       } catch (storeError) {
-        console.error(`[report ${reportId}] failed to persist partial state:`, storeError);
+        logError('failed to persist partial state', storeError);
       }
-      console.error(`[report ${reportId}] partial extraction failure:`, error);
+      logError('partial extraction failure', error);
       return;
     }
     await fail(error);

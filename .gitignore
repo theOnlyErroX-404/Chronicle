@@ -96,3 +96,13 @@ Desktop.ini
 
 # Working memory / plans (internal, not source of truth)
 PLAN.md
+
+# ---------------------------------------------------------------------------
+# Agent / tooling config (local-only; not part of the product)
+# ---------------------------------------------------------------------------
+
+.opencode/
+opencode.json
+vibeguard.config.json
+SECURITY-AUDIT-2026-08-05.md
+CODEFINDINGS.md

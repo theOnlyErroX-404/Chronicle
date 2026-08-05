@@ -40,6 +40,9 @@ export type ReportStore = {
     id: string,
     patch: Partial<Omit<ReportRecord, 'id' | 'createdAt' | 'sourceType'>>,
   ): Promise<ReportRecord>;
+  // Reports currently consuming resources (queued or in any pipeline stage);
+  // used by the API to bound concurrent analyses.
+  countActive(): Promise<number>;
 };
 
 const activeStatuses = new Set<ReportStatus>(['queued', 'ingesting', 'extracting', 'modeling']);
@@ -76,6 +79,14 @@ class InMemoryReportStore implements ReportStore {
     const updated = { ...current, ...patch, updatedAt: new Date().toISOString() };
     this.reports.set(id, updated);
     return updated;
+  }
+
+  async countActive(): Promise<number> {
+    let count = 0;
+    for (const report of this.reports.values()) {
+      if (activeStatuses.has(report.status)) count += 1;
+    }
+    return count;
   }
 
   // Evict the oldest report that is not currently queued/processing, so a

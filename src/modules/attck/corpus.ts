@@ -51,7 +51,9 @@ type LabelEntry = { pattern: RegExp; object: AttackObject; type: AttckType };
 const escapeRegex = (label: string) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Name + alias -> object, for groups/software/campaigns, matched as whole words
-// so a proper noun like "Bazar" never matches inside "BazarLoader". Compiled
+// so a proper noun like "Bazar" never matches inside "BazarLoader". The
+// lookarounds (!\w) bound each side without the \b edge case that would never
+// match a label ending in a non-word char (e.g. the group "LAPSUS$"). Compiled
 // once at module load.
 const buildLabelIndex = (
   objects: readonly AttackObject[],
@@ -59,7 +61,8 @@ const buildLabelIndex = (
 ): readonly LabelEntry[] =>
   objects.flatMap((object) =>
     [object.name, ...(object.aliases ?? [])].map((label) => ({
-      pattern: new RegExp(`\\b${escapeRegex(label)}\\b`, 'i'),
+      // nosemgrep: detect-non-literal-regexp
+      pattern: new RegExp(`(?<!\\w)${escapeRegex(label)}(?!\\w)`, 'i'), // nosemgrep: detect-non-literal-regexp
       object,
       type,
     })),

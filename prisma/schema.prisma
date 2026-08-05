@@ -34,5 +34,7 @@ model Report {
   feedback     Json?
   attck        Json?
 
+  @@index([status])
+  @@index([createdAt])
   @@map("reports")
 }

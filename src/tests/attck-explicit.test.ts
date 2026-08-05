@@ -92,6 +92,35 @@ describe('matchExplicitTechniques', () => {
     expect(mappings.map((m) => m.attckId)).not.toContain('S0373');
   });
 
+  it('matches group labels that end in a non-word character (LAPSUS$)', () => {
+    const mappings = matchExplicitTechniques('The LAPSUS$ group ran the intrusion.');
+    const g = mappings.find((m) => m.attckId === 'G1004');
+    expect(g).toMatchObject({
+      type: 'group',
+      name: 'LAPSUS$',
+      confidence: 0.9,
+      matchedText: 'LAPSUS$',
+    });
+  });
+
+  it('never emits three-digit technique ids (matches AttckMappingSchema)', () => {
+    const mappings = matchExplicitTechniques('referencing T123 is not a real ATT&CK id');
+    expect(mappings.find((m) => m.attckId === 'T123')).toBeUndefined();
+  });
+
+  it('does not prefix-match malformed ids with a longer digit run', () => {
+    const mappings = matchExplicitTechniques('T1001.0012 is malformed, as is G12345 and T12345.');
+    expect(mappings.find((m) => m.attckId === 'T1001')).toBeUndefined();
+    expect(mappings.find((m) => m.attckId === 'T1001.001')).toBeUndefined();
+    expect(mappings.find((m) => m.attckId === 'G1234')).toBeUndefined();
+    expect(mappings.find((m) => m.attckId === 'T1234')).toBeUndefined();
+  });
+
+  it('still matches a valid sub-technique id', () => {
+    const mappings = matchExplicitTechniques('T1566.001 phishing via attachment.');
+    expect(mappings.find((m) => m.attckId === 'T1566.001')?.confidence).toBe(1);
+  });
+
   it('deduplicates by id, preferring the higher-confidence mention', () => {
     const mappings = matchExplicitTechniques(
       'OS credential dumping (T1003) is common, as is APT29 (G0016).',

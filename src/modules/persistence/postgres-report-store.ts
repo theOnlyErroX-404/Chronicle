@@ -18,6 +18,7 @@ export type ReportDb = {
   create(args: { data: unknown }): Promise<ReportRow>;
   findUnique(args: { where: { id: string } }): Promise<ReportRow | null>;
   update(args: { where: { id: string }; data: unknown }): Promise<ReportRow>;
+  count(args: { where: unknown }): Promise<number>;
 };
 
 // Constructed lazily on first use: the in-memory backend (the default) never
@@ -104,5 +105,12 @@ export const createPostgresReportStore = (
       }
       throw error;
     }
+  },
+
+  async countActive(): Promise<number> {
+    const count = await db.count({
+      where: { status: { in: ['queued', 'ingesting', 'extracting', 'modeling'] } },
+    });
+    return Number(count);
   },
 });

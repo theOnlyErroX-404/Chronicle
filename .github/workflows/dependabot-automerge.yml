@@ -14,19 +14,33 @@ jobs:
     name: Approve and auto-merge non-major PRs
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
       - name: Fetch dependabot metadata
         id: meta
-        uses: dependabot/fetch-metadata@v3
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3
         with:
           compat-lookup: true
 
-      - name: Approve and merge non-major updates
+      - name: Approve non-major updates
         if: ${{ steps.meta.outputs.update-type != 'version-update:semver-major' }}
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr review --approve "$PR_URL"
+
+      # Merge only after the CI/Security checks on the PR pass. `gh pr merge --auto`
+      # waits for branch-protection requirements but not for checks that merely run
+      # on the PR, so gate on `gh pr checks` explicitly before merging.
+      - name: Wait for checks then auto-merge
+        if: ${{ steps.meta.outputs.update-type != 'version-update:semver-major' }}
+        timeout-minutes: 25
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr review --approve "$PR_URL"
+          if ! timeout 1440 gh pr checks "$PR_URL" --watch; then
+            echo "::error::PR checks failed or timed out; not merging."
+            exit 1
+          fi
           gh pr merge --squash --auto "$PR_URL"

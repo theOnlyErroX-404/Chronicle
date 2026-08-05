@@ -60,6 +60,11 @@ const db: ReportDb = {
     rows.set(where.id, merged as ReportRow);
     return merged as ReportRow;
   },
+  async count({ where }) {
+    const statuses = (where as { status?: { in?: string[] } }).status?.in;
+    if (statuses) return [...rows.values()].filter((row) => statuses.includes(row.status)).length;
+    return rows.size;
+  },
 };
 
 describe('PostgresReportStore (fake Prisma delegate)', () => {

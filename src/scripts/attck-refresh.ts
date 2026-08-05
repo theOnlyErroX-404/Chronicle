@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -52,7 +53,16 @@ const named = (objs: StixObject[]) =>
 const main = async () => {
   const response = await fetch(BUNDLE_URL);
   if (!response.ok) throw new Error(`ATT&CK STIX download failed: HTTP ${response.status}`);
-  const bundle = (await response.json()) as { objects: StixObject[] };
+  // Hash before parsing so the pin record refers to the exact bytes the corpus
+  // was derived from (MITRE serves the bundle tag-pinned, not content-addressed).
+  const bundleBytes = await response.arrayBuffer();
+  const sha256 = createHash('sha256').update(new Uint8Array(bundleBytes)).digest('hex');
+  const bundle = JSON.parse(new TextDecoder().decode(bundleBytes)) as {
+    type?: string;
+    objects?: StixObject[];
+  };
+  if (bundle.type !== 'bundle' || !Array.isArray(bundle.objects) || bundle.objects.length === 0)
+    throw new Error('Downloaded payload does not look like an ATT&CK STIX bundle.');
 
   const techniques = bundle.objects
     .filter((obj) => obj.type === 'attack-pattern')
@@ -90,7 +100,7 @@ const main = async () => {
   await mkdir(dirname(OUT), { recursive: true });
   await writeFile(OUT, JSON.stringify(payload, null, 2));
   console.log(
-    `Wrote ${techniques.length} techniques, ${groups.length} groups, ${software.length} software, ${campaigns.length} campaigns to ${OUT}`,
+    `Wrote ${techniques.length} techniques, ${groups.length} groups, ${software.length} software, ${campaigns.length} campaigns to ${OUT} (sha256 ${sha256})`,
   );
 };
 

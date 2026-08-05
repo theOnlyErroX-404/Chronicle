@@ -3,8 +3,12 @@ import { attckIndex, labelIndex, techniqueNameIndex } from './corpus';
 
 // ATT&CK ids are one uppercase letter + digits: T#### techniques (with an
 // optional .NNN sub-technique suffix), G#### groups, S#### software, C####
-// campaigns. Word boundaries keep "T1059" from matching inside "T10591".
-const ATTACK_ID_REGEX = /\bT\d{3,4}(?:\.\d{3})?\b|\b[GSC]\d{4}\b/g;
+// campaigns. Technique ids are always four digits (T1000+); keeping the regex
+// at \d{4} matches AttckMappingSchema so an id like "T123" never yields an
+// invalid mapping. The (?!\.\d)/(?!\d) lookaheads stop a match from silently
+// consuming the prefix of a longer digit run: "T1001.0012" or "G12345" is a
+// malformed id, not a T1001/G1234 mention.
+const ATTACK_ID_REGEX = /\bT\d{4}(?:\.\d{3})?(?!\.\d)(?!\d)\b|\b[GSC]\d{4}(?!\d)\b/g;
 
 const typeFromId = (id: string): AttckType =>
   id.startsWith('T')

@@ -102,7 +102,7 @@ software, campaigns) matched explicitly from the report text. All endpoints requ
 
 ## ATT&CK corpus
 
-The offline MATCH corpus in `src/modules/attck/data/enterprise-attck.json` is derived
+The offline ATT&CK corpus in `src/modules/attck/data/enterprise-attck.json` is derived
 from MITRE's official ATT&CK STIX bundle:
 `npm run attck:refresh` re-derives it when a new ATT&CK release ships (bump the pinned
 tag in `src/scripts/attck-refresh.ts`). Data is MITRE ATT&CK®, distributed under the
@@ -115,7 +115,7 @@ tag in `src/scripts/attck-refresh.ts`). Data is MITRE ATT&CK®, distributed unde
   `postman/Chronicle.postman_environment.json`. Set `apiToken` to match `CHRONICLE_API_TOKEN`
   (leave empty locally); `baseUrl` defaults to `http://127.0.0.1:3210`. The create-report
   requests store the returned `report_id`/`job_id` for the polling requests.
-- **Postman sync**: with `Postman_API_KEY` in `.env` (and optionally `POSTMAN_WORKSPACE_ID`),
+- **Postman sync**: with `POSTMAN_API_KEY` in `.env` (and optionally `POSTMAN_WORKSPACE_ID`),
   `npm run postman:sync` upserts the local collection + environment into your Postman
   workspace by name (creates once, updates on later runs).
 

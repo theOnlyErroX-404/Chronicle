@@ -23,9 +23,18 @@ const zodProblem = (error: unknown): ChronicleError =>
 // the envelope and enforce the real limit on the parsed file size below.
 const MULTIPART_FRAMING_SLACK = 256 * 1024;
 
+// Cap on concurrent analyses: each active report costs local CPU/GPU (or hosted-
+// model tokens), so submissions are refused with 429 while the cap is reached.
+export const MAX_ACTIVE_REPORTS = 8;
+
 export async function POST(request: Request) {
   try {
     requireApiToken(request);
+    if ((await reportStore.countActive()) >= MAX_ACTIVE_REPORTS)
+      throw new ChronicleError(
+        'Too many active analyses; retry after the current ones finish.',
+        429,
+      );
     const contentType = request.headers.get('content-type') ?? '';
     if (contentType.includes('application/json')) {
       const rawBody = await readStreamWithLimit(

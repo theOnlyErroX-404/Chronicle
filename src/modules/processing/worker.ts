@@ -33,6 +33,6 @@ const main = async () => {
 };
 
 main().catch((error) => {
-  console.error('[worker] startup failed:', error);
+  console.error('[worker] startup failed:', error instanceof Error ? error.message : error);
   process.exit(1);
 });

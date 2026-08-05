@@ -412,6 +412,20 @@
               "body": "{\n  \"type\": \"bundle\",\n  \"id\": \"bundle--5f1a7c6d-2b3e-4f5a-8c7d-9e0f1a2b3c4d\",\n  \"spec_version\": \"2.1\",\n  \"objects\": [\n    {\n      \"type\": \"threat-actor\",\n      \"spec_version\": \"2.1\",\n      \"id\": \"threat-actor--01ab\",\n      \"created\": \"2026-08-04T12:00:00.000Z\",\n      \"modified\": \"2026-08-04T12:00:00.000Z\",\n      \"name\": \"APT-42\",\n      \"confidence\": 92,\n      \"labels\": [\"threat-actor\"],\n      \"x_chronicle_report_id\": \"0a2f6ebc-bb64-4fbb-b527-7201adbc6f04\"\n    },\n    {\n      \"type\": \"relationship\",\n      \"spec_version\": \"2.1\",\n      \"id\": \"relationship--a1\",\n      \"created\": \"2026-08-04T12:00:00.000Z\",\n      \"modified\": \"2026-08-04T12:00:00.000Z\",\n      \"relationship_type\": \"attributed-to\",\n      \"source_ref\": \"malware--02cd\",\n      \"target_ref\": \"threat-actor--01ab\",\n      \"confidence\": 85,\n      \"x_chronicle_report_id\": \"0a2f6ebc-bb64-4fbb-b527-7201adbc6f04\"\n    }\n  ]\n}"
             }
           ]
+        },
+        {
+          "name": "Get report ATT&CK mapping",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}/attck",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "{{report_id}}", "attck"]
+            },
+            "description": "Offline MITRE ATT&CK mapping for a finished report: matched techniques (T####), groups (G####), software (S####), and campaigns (C####) with names and aliases. Matching is local and deterministic (no LLM); the corpus derives from the official MITRE v19.1 STIX bundle.\n\nReturns **200** with:\n- `{ \"source\": \"explicit\", \"matches\": [...] }`\n- each match carries the ATT&CK id, name, aliases, and the matched label/text span\n\nErrors:\n- **404** unknown `report_id`\n- **409** mapping not ready yet"
+          },
+          "response": []
         }
       ]
     },

@@ -52,7 +52,10 @@ class InMemoryJobQueue implements JobQueue {
     try {
       await task();
     } catch (error) {
-      console.error('[queue] job threw an unhandled error:', error);
+      console.error(
+        '[queue] job threw an unhandled error:',
+        error instanceof Error ? error.message : error,
+      );
     } finally {
       this.busy = false;
       void this.pump();
@@ -148,7 +151,11 @@ export const createBullMqWorker = (
 
   worker.on('completed', (job) => console.log(`[worker] report ${job.data.reportId} done`));
   worker.on('failed', (job, error) => {
-    console.error(`[worker] report ${job?.data.reportId} failed:`, error);
+    console.error(
+      '[worker] report %s failed:',
+      job?.data.reportId,
+      error instanceof Error ? error.message : error,
+    );
   });
   return worker;
 };

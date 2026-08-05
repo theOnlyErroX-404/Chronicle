@@ -2,7 +2,9 @@
 # everything; only the Prisma schema/generated client and static assets are
 # copied explicitly.
 
-FROM node:22-alpine AS base
+# Digest-pinned so rebuilds are reproducible (dependabot re-bumps the digest on
+# tag updates). node:22-alpine @ 2026-07-29.
+FROM node:22-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS base
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Deps layer so npm ci benefits from the build cache when only sources change.
@@ -42,4 +44,6 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 
 USER nextjs
 EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 CMD ["node", "server.js"]

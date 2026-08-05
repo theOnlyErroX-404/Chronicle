@@ -1,11 +1,11 @@
 // Syncs postman/*.json to the account's Postman workspace via the Postman API.
-// Requires Postman_API_KEY in the environment (.env is loaded via --env-file).
+// Requires POSTMAN_API_KEY in the environment (.env is loaded via --env-file).
 // Upserts by name: creates the collection/environment if absent, else updates.
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const API = 'https://api.getpostman.com';
-const KEY = process.env.Postman_API_KEY ?? '';
+const KEY = process.env.POSTMAN_API_KEY ?? '';
 const WORKSPACE_ID = process.env.POSTMAN_WORKSPACE_ID ?? '';
 const COLLECTION_PATH = path.join(process.cwd(), 'postman', 'Chronicle.postman_collection.json');
 const ENVIRONMENT_PATH = path.join(process.cwd(), 'postman', 'Chronicle.postman_environment.json');
@@ -29,7 +29,7 @@ const apiCall = async (method: string, url: string, body?: unknown) => {
 };
 
 const main = async () => {
-  if (!KEY) fail('Postman_API_KEY is not set (add it to .env).');
+  if (!KEY) fail('POSTMAN_API_KEY is not set (add it to .env).');
 
   const [{ workspaces }, { collections }, { environments }] = await Promise.all([
     apiCall('GET', '/workspaces'),

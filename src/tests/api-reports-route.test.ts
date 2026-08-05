@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { POST } from '@/app/api/v1/reports/route';
+import { MAX_ACTIVE_REPORTS, POST } from '@/app/api/v1/reports/route';
 import { config } from '@/lib/config';
 import { processReport } from '@/modules/processing/process-report';
 import { jobQueue } from '@/modules/processing/queue';
+import { reportStore } from '@/modules/shared/report-store';
 
 vi.mock('@/lib/config', () => ({ config: { maxReportBytes: 100, apiToken: undefined } }));
 vi.mock('@/modules/processing/process-report', () => ({ processReport: vi.fn(async () => {}) }));
@@ -121,5 +122,24 @@ describe('POST /api/v1/reports (Zod at the boundary)', () => {
       pdfRequest(new File([new Uint8Array(4)], 'x.txt', { type: 'text/plain' })),
     );
     expect(response.status).toBe(415);
+  });
+
+  it('rejects submission with 429 when the active-report cap is reached', async () => {
+    const prefill: { id: string }[] = [];
+    for (let index = 0; index < MAX_ACTIVE_REPORTS; index += 1) {
+      prefill.push(
+        await reportStore.create({
+          sourceType: 'url',
+          sourceUrl: `https://example.com/prefill-${index}`,
+        }),
+      );
+    }
+    const response = await POST(jsonRequest({ url: 'https://example.com/report.txt' }));
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({
+      detail: 'Too many active analyses; retry after the current ones finish.',
+    });
+    expect(enqueueSpy).not.toHaveBeenCalled();
+    await Promise.all(prefill.map((report) => reportStore.update(report.id, { status: 'failed' })));
   });
 });
