@@ -5,7 +5,7 @@ import {
   createPostgresReportStore,
   type ReportDb,
 } from '@/modules/persistence/postgres-report-store';
-import type { Correction, ExtractionResult, Graph } from '@/modules/shared/contracts';
+import type { AttckMapping, Correction, ExtractionResult, Graph } from '@/modules/shared/contracts';
 import { config } from '@/lib/config';
 
 // In-memory fake of the Prisma report delegate: same merge semantics (undefined
@@ -39,6 +39,7 @@ const db: ReportDb = {
       graph: null,
       stixBundle: null,
       feedback: null,
+      attck: null,
     };
     rows.set(d.id, row);
     return row;
@@ -93,7 +94,7 @@ describe('PostgresReportStore (fake Prisma delegate)', () => {
     expect(done?.partial).toBeUndefined();
   });
 
-  it('round-trips extraction, graph, and STIX bundle payloads', async () => {
+  it('round-trips extraction, graph, STIX bundle, and ATT&CK payloads', async () => {
     const store = createPostgresReportStore(db);
     const report = await store.create({ sourceType: 'url', sourceUrl: 'https://example.com/2' });
 
@@ -106,12 +107,31 @@ describe('PostgresReportStore (fake Prisma delegate)', () => {
       edges: [],
     };
     const stixBundle = { type: 'bundle', objects: [] };
-    await store.update(report.id, { extraction, graph, stixBundle });
+    const attck: AttckMapping[] = [
+      {
+        attckId: 'T1059',
+        type: 'technique',
+        name: 'Command and Scripting Interpreter',
+        confidence: 1,
+        source: 'explicit',
+        matchedText: 'T1059',
+      },
+      {
+        attckId: 'G0016',
+        type: 'group',
+        name: 'APT29',
+        confidence: 0.9,
+        source: 'explicit',
+        matchedText: 'APT29',
+      },
+    ];
+    await store.update(report.id, { extraction, graph, stixBundle, attck });
 
     const stored = await store.get(report.id);
     expect(stored?.extraction).toEqual(extraction);
     expect(stored?.graph).toEqual(graph);
     expect(stored?.stixBundle).toEqual(stixBundle);
+    expect(stored?.attck).toEqual(attck);
   });
 
   it('throws the same not-found message as the in-memory store on a missing update', async () => {
@@ -166,7 +186,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresReportStore (live)', () => {
     await client.$disconnect();
   });
 
-  it('persists a report and round-trips graph, STIX, and feedback', async () => {
+  it('persists a report and round-trips graph, STIX, feedback, and ATT&CK', async () => {
     const created = await store.create({ sourceType: 'pdf', filename: 'live.pdf' });
     ids.push(created.id);
     expect(created.status).toBe('queued');
@@ -189,6 +209,16 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresReportStore (live)', () => {
         createdAt: '2026-08-05T00:00:00.000Z',
       },
     ];
+    const attck: AttckMapping[] = [
+      {
+        attckId: 'T1059',
+        type: 'technique',
+        name: 'Command and Scripting Interpreter',
+        confidence: 1,
+        source: 'explicit',
+        matchedText: 'T1059',
+      },
+    ];
     await store.update(created.id, {
       status: 'done',
       progress: 'done',
@@ -196,6 +226,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresReportStore (live)', () => {
       graph,
       stixBundle,
       feedback,
+      attck,
     });
 
     const stored = await store.get(created.id);
@@ -204,6 +235,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresReportStore (live)', () => {
     expect(stored?.graph).toEqual(graph);
     expect(stored?.stixBundle).toEqual(stixBundle);
     expect(stored?.feedback).toEqual(feedback);
+    expect(stored?.attck).toEqual(attck);
   });
 
   it('maps a missing update to the not-found message', async () => {

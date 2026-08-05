@@ -5,6 +5,7 @@ import {
   getLlmClient,
 } from '@/modules/extraction';
 import { ingestReport, type IngestionSource } from '@/modules/ingestion';
+import { matchExplicitTechniques } from '@/modules/attck';
 import {
   buildGraph,
   buildStixLiteBundle,
@@ -39,7 +40,15 @@ export const processReport = async (reportId: string, source: IngestionSource) =
       progress: 'ingesting',
     });
     const rawText = await ingestReport(source);
-    await reportStore.update(reportId, { rawText, status: 'extracting', progress: 'extracting' });
+    // ATT&CK mapping needs only the raw text (no LLM), so compute it here — it
+    // then survives a later partial-extraction failure instead of being lost.
+    const attck = matchExplicitTechniques(rawText);
+    await reportStore.update(reportId, {
+      rawText,
+      attck,
+      status: 'extracting',
+      progress: 'extracting',
+    });
 
     const extraction = await extractCandidates(rawText, client, {
       onProgress: ({ current, total }) => setProgress(`chunk ${current}/${total}`),

@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { Prisma, PrismaClient, type Report as ReportRow } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { config } from '@/lib/config';
-import type { Correction, ExtractionResult, Graph, ReportStatus } from '@/modules/shared/contracts';
+import type {
+  AttckMapping,
+  Correction,
+  ExtractionResult,
+  Graph,
+  ReportStatus,
+} from '@/modules/shared/contracts';
 import type { ReportRecord } from '@/modules/shared/report-store';
 
 // Narrow persistence surface used by the store. The real Prisma report
@@ -43,6 +49,7 @@ const fromRow = (row: ReportRow): ReportRecord => ({
   graph: (row.graph as Graph | null) ?? undefined,
   stixBundle: (row.stixBundle as Record<string, unknown> | null) ?? undefined,
   feedback: (row.feedback as Correction[] | null) ?? undefined,
+  attck: (row.attck as AttckMapping[] | null) ?? undefined,
 });
 
 // The in-memory store spreads the patch over the current record, so an

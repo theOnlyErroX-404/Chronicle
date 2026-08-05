@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { Correction, ExtractionResult, Graph, ReportStatus } from '@/modules/shared/contracts';
+import type {
+  AttckMapping,
+  Correction,
+  ExtractionResult,
+  Graph,
+  ReportStatus,
+} from '@/modules/shared/contracts';
 import { config } from '@/lib/config';
 import { createPostgresReportStore } from '@/modules/persistence/postgres-report-store';
 
@@ -20,6 +26,9 @@ export type ReportRecord = {
   stixBundle?: Record<string, unknown>;
   // Human-in-the-loop corrections, append-only, newest last.
   feedback?: Correction[];
+  // MITRE ATT&CK mappings derived from the raw text (techniques, groups,
+  // software, campaigns), newest run replacing the previous result.
+  attck?: AttckMapping[];
 };
 
 type NewReport = Pick<ReportRecord, 'sourceType' | 'sourceUrl' | 'filename'>;
