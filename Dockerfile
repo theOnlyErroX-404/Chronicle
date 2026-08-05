@@ -2,7 +2,7 @@
 # everything; only the Prisma schema/generated client and static assets are
 # copied explicitly.
 
-FROM node:22-alpine AS base
+FROM node:25-alpine AS base
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Deps layer so npm ci benefits from the build cache when only sources change.
