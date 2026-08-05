@@ -51,13 +51,20 @@ module.exports = {
       to: { path: '^src/modules/processing/', pathNot: '^src/modules/processing/index\\.ts$' },
     },
     {
+      name: 'no-attck-internals',
+      severity: 'error',
+      comment: 'Import attck through its index.ts, not internal files.',
+      from: { pathNot: '^src/modules/attck/|^src/tests/|^src/scripts/' },
+      to: { path: '^src/modules/attck/', pathNot: '^src/modules/attck/index\\.ts$' },
+    },
+    {
       name: 'no-cycles-between-business-modules',
       severity: 'error',
       comment:
         'Business contexts must not depend on each other in a cycle (would block a future split).',
-      from: { path: '^src/modules/(extraction|ingestion|knowledge-modeling|processing)/' },
+      from: { path: '^src/modules/(extraction|ingestion|knowledge-modeling|processing|attck)/' },
       to: {
-        path: '^src/modules/(extraction|ingestion|knowledge-modeling|processing)/',
+        path: '^src/modules/(extraction|ingestion|knowledge-modeling|processing|attck)/',
         circular: true,
       },
     },

@@ -22,10 +22,13 @@ implementing the first phases of [`Chronicle-architecture.md`](Chronicle-archite
    job queue behind the `ReportStore` / `JobQueue` seams; a separate `npm run worker`
    process consumes jobs (survives app restarts).
 5. **Feedback (human-in-the-loop)** — `POST /api/v1/reports/{id}/feedback` accepts
-   accept/reject/correct corrections against graph entities and relationships; they're
-   stored on the report and replayed through the graph/stix payloads.
-6. **Graph/API + UI** — async `202` + polling API, graph/STIX/feedback endpoints,
-   Cytoscape render.
+    accept/reject/correct corrections against graph entities and relationships; they're
+    stored on the report and replayed through the graph/stix payloads.
+ 6. **ATT&CK mapping** — after ingestion, explicit matches from the raw text
+    (technique/group/software/campaign ids and names or aliases) are resolved against
+    an offline MITRE corpus; `GET /api/v1/reports/{id}/attck` returns them.
+ 7. **Graph/API + UI** — async `202` + polling API, graph/STIX/feedback/ATT&CK
+    endpoints, Cytoscape render.
 
 All LLM output is JSON-schema-constrained and validated with **Zod**; malformed output is
 rejected and retried, never coerced. Extraction results remain analyst-reviewable
@@ -82,18 +85,29 @@ development only when `NODE_ENV` is not production.
 `POST /api/v1/reports` (multipart PDF or `{"url": ...}`) → `202` + `job_id`;
 `GET /api/v1/jobs/{id}` polls `pending → extracting → done/failed`;
 `GET /api/v1/reports/{id}`, `/{id}/graph`, `/{id}/stix` return results once done;
-`POST /api/v1/reports/{id}/feedback` records analyst corrections. All endpoints require
+`POST /api/v1/reports/{id}/feedback` records analyst corrections;
+`GET /api/v1/reports/{id}/attck` returns MITRE ATT&CK mappings (techniques, groups,
+software, campaigns) matched explicitly from the report text. All endpoints require
 `Authorization: Bearer <token>` when `CHRONICLE_API_TOKEN` is set.
 
 ## Quality
 
 - `npm test` (vitest), `npm run typecheck`, `npm run lint`, `npm run prettier:check`,
-  `npm run deps:check` — all green (173 tests locally; 176 in CI, where live
-  Postgres/Redis integration tests run against service containers).
+  `npm run deps:check` — all green (185 tests with a local Postgres/Redis; 176 surface
+  in CI, where live Postgres/Redis integration tests run against service containers).
 - **Golden-set eval** (entity vs relationship scored separately, per the architecture
   blueprint's quality gate): `npm run eval:golden`. Reports the active model/endpoints.
 - CI runs the same gates on every push/PR (`.github/workflows/ci.yml`), with real
   Postgres 17 + Redis 7 service containers for the integration tests; CodeQL scans weekly.
+
+## ATT&CK corpus
+
+The offline MATCH corpus in `src/modules/attck/data/enterprise-attck.json` is derived
+from MITRE's official ATT&CK STIX bundle:
+`npm run attck:refresh` re-derives it when a new ATT&CK release ships (bump the pinned
+tag in `src/scripts/attck-refresh.ts`). Data is MITRE ATT&CK®, distributed under the
+[Apache License 2.0](https://github.com/mitre-attack/attack-stix-data); attribution per
+[ATT&CK Usage Terms](https://attack.mitre.org/resources/terms-of-use/).
 
 ## API clients
 

@@ -32,6 +32,7 @@ model Report {
   graph        Json?
   stixBundle   Json?    @map("stix_bundle")
   feedback     Json?
+  attck        Json?
 
   @@map("reports")
 }

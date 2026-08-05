@@ -127,3 +127,34 @@ export const CorrectionInputSchema = CorrectionSchema.omit({ id: true, createdAt
 
 export type Correction = z.infer<typeof CorrectionSchema>;
 export type CorrectionInput = z.infer<typeof CorrectionInputSchema>;
+
+// MITRE ATT&CK mapping (architecture §2 ATT&CK Mapping context, 2-D). Maps the
+// report to ATT&CK objects of four kinds: techniques (T####), groups (G####),
+// software (S####), and campaigns (C####). source = how the match was produced:
+// "explicit" = the ATT&CK id or name/alias appears literally in the report text
+// (deterministic); a "suggested" tier via embedding similarity is added
+// separately and bumps this enum.
+export const AttckSourceSchema = z.enum(['explicit']);
+
+export const AttckTypeSchema = z.enum(['technique', 'group', 'software', 'campaign']);
+export type AttckType = z.infer<typeof AttckTypeSchema>;
+
+// name/tactic are optional: they come from the bundled corpus, and a report can
+// cite an ATT&CK id that the curated subset does not carry yet (the full matrix
+// arrives with the embedding tier) — such mappings keep a confidence and the
+// matchedText but no enriched label. tactic is only set for technique mappings.
+export const AttckMappingSchema = z.object({
+  attckId: z
+    .string()
+    .min(1)
+    .max(50)
+    .regex(/^[A-Z]\d{4}(\.\d{3})?$/),
+  type: AttckTypeSchema,
+  name: z.string().min(1).max(300).optional(),
+  tactic: z.string().min(1).max(200).optional(),
+  confidence: z.number().min(0).max(1),
+  source: AttckSourceSchema,
+  matchedText: z.string().min(1).max(500).optional(),
+});
+
+export type AttckMapping = z.infer<typeof AttckMappingSchema>;
