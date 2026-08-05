@@ -4,19 +4,22 @@
 // and terminates the worker when either is exceeded. Loaded by node:worker_threads,
 // not by the Next bundler, so keep this file free of the "@/" alias and rely on
 // Node's own module resolution.
-import { parentPort, workerData } from "node:worker_threads";
-import type { PdfWorkerInput, PdfWorkerOutput } from "./pdf-worker-protocol";
+import { parentPort, workerData } from 'node:worker_threads';
+import type { PdfWorkerInput, PdfWorkerOutput } from './pdf-worker-protocol';
 
 const input = workerData as PdfWorkerInput;
 
 const parse = async (): Promise<PdfWorkerOutput> => {
   try {
-    const { extractText, getDocumentProxy } = await import("unpdf");
+    const { extractText, getDocumentProxy } = await import('unpdf');
     const pdf = await getDocumentProxy(input.bytes);
     const { text } = await extractText(pdf, { mergePages: true });
-    return { kind: "ok", text };
+    return { kind: 'ok', text };
   } catch (error) {
-    return { kind: "error", message: error instanceof Error ? error.message : "unknown parse failure" };
+    return {
+      kind: 'error',
+      message: error instanceof Error ? error.message : 'unknown parse failure',
+    };
   }
 };
 

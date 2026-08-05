@@ -17,6 +17,32 @@ jobs:
     name: typecheck · lint · test · build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      DATABASE_URL: postgres://chronicle:chronicle@localhost:5432/chronicle
+      REDIS_URL: redis://localhost:6379
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: chronicle
+          POSTGRES_PASSWORD: chronicle
+          POSTGRES_DB: chronicle
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chronicle"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
 
@@ -31,11 +57,17 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
       - name: Typecheck
         run: npm run typecheck
 
       - name: Lint
         run: npm run lint
+
+      - name: Check formatting
+        run: npm run prettier:check
 
       - name: Check module boundaries
         run: npm run deps:check

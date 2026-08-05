@@ -8,6 +8,8 @@
     "start": "next start",
     "worker": "tsx src/modules/processing/worker.ts",
     "lint": "eslint .",
+    "prettier": "prettier --write .",
+    "prettier:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

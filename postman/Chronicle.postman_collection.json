@@ -63,14 +63,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports"]
             },
             "description": "Submit a threat-report **URL** as JSON.\n\nBody: `{\"url\": \"<valid https? URL>\"}`\n\nReturns **202 Accepted** with `report_id`, `job_id` (same value) and `status` (`queued`). Processing continues asynchronously.\n\nErrors:\n- **400** invalid JSON, or `url` missing/not a valid URL (`Provide a valid report URL.`)\n- **401** missing/bad bearer token\n- **413** body larger than the 10 MB limit\n- **415** wrong content type\n\nThe test script captures `report_id`/`job_id` into collection variables for the polling requests."
           },
@@ -200,14 +194,8 @@
             },
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports"]
             },
             "description": "Upload a **PDF** threat report as `multipart/form-data`.\n\nForm field: `file` (the PDF).\n\nReturns **202 Accepted** with `report_id`, `job_id` and `status` (`queued`).\n\nErrors:\n- **400** missing `file` field or malformed multipart body\n- **401** missing/bad bearer token\n- **413** file is empty or larger than the 10 MB limit (`The PDF exceeds the configured size limit.`)\n- **415** file content-type is not `application/pdf` (`Only PDF uploads are accepted.`)\n\nThe test script captures `report_id`/`job_id` into collection variables."
           },
@@ -293,15 +281,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "{{report_id}}"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "{{report_id}}"]
             },
             "description": "Poll a report's status.\n\nReturns **200** with:\n- `id` — report UUID\n- `source_type` — `url` or `pdf`\n- `source_url` — source URL (url reports)\n- `filename` — uploaded filename (pdf reports)\n- `status` — `queued` → `ingesting` → `extracting` → `modeling` → `done` | `failed`\n- `created_at` — ISO-8601 timestamp\n\nErrors:\n- **401** missing/bad bearer token\n- **404** unknown `report_id` (`Report not found.`)\n\nFor progress, `partial` results and `queue_position`, use **Get job** instead."
           },
@@ -351,16 +332,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}/graph",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "{{report_id}}",
-                "graph"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "{{report_id}}", "graph"]
             },
             "description": "Interactive knowledge graph for a finished report.\n\nReturns **200** with:\n- `nodes[]`: `{ id, type, name, confidence }`\n  - `type` ∈ `threat-actor`, `malware`, `tool`, `web-shell`, `vulnerability`, `indicator`, `sector`, `country`, `campaign`, `email`, `file-path`\n  - `confidence` ∈ 0..1\n- `edges[]`: `{ id, source, target, type, confidence }`\n  - `type` ∈ `uses`, `exploits`, `targets`, `attributed-to`, `communicates-with`, `mitigated-by`, `executes`, `downloads`, `delivers`, `exfiltrates`\n  - `source`/`target` reference `node.id`\n\nErrors:\n- **404** unknown `report_id`\n- **409** graph not ready yet (`The report graph is not ready yet.`) — retry once `status` is `done`"
           },
@@ -410,16 +383,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}/stix",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "{{report_id}}",
-                "stix"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "{{report_id}}", "stix"]
             },
             "description": "STIX 2.1-lite bundle for a finished report, as a JSON download (`content-disposition: attachment; filename=chronicle-<id>.stix.json`).\n\nReturns **200** with a STIX bundle:\n- `{ \"type\": \"bundle\", \"id\": \"bundle--<uuid>\", \"spec_version\": \"2.1\", \"objects\": [...] }`\n- `objects[]` = entities mapped to STIX types (`threat-actor`, `malware`, `tool`, `vulnerability`, `indicator`, `campaign`, `identity`) with `id`, `created`, `modified`, `name`, `confidence` (0-100), `labels` (the internal entity type), `x_chronicle_report_id`\n- plus `relationship` objects linking `source_ref` → `target_ref` with `relationship_type`\n\nErrors:\n- **404** unknown `report_id`\n- **409** bundle not ready yet (`The STIX bundle is not ready yet.`)"
           },
@@ -461,15 +426,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/jobs/{{job_id}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "jobs",
-                "{{job_id}}"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "jobs", "{{job_id}}"]
             },
             "description": "Job detail for a report.\n\nReturns **200** with:\n- `id`, `report_id` — same UUID\n- `status` — lifecycle state (see collection description)\n- `progress` — free-form progress string (e.g. `relationships (3/7 chunks)`)\n- `partial` — `true` when results were salvaged from a partially-failed run\n- `error` — failure message when `status` is `failed`, else `null`\n- `queue_position` — position in the queue (running job = 1); only present while `queued`\n- `created_at`, `updated_at` — ISO-8601 timestamps\n\nErrors:\n- **401** missing/bad bearer token\n- **404** unknown id (`Job not found.`)"
           },

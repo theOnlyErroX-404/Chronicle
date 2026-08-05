@@ -1,4 +1,4 @@
-import { ChronicleError } from "@/modules/shared/errors";
+import { ChronicleError } from '@/modules/shared/errors';
 
 // Stream a body with a running byte counter instead of buffering it unboundedly
 // first: an oversized body is rejected at the byte that crosses the cap, so

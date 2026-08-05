@@ -1,10 +1,18 @@
-import { config } from "@/lib/config";
-import { getLlmClient, type LlmClient } from "@/modules/extraction/llm-client";
-import { canonicalizeEndpoints, mergeExtractedEntities, mergeRelationships } from "@/modules/knowledge-modeling";
-import type { ExtractedEntity, ExtractedRelationship, ExtractionResult } from "@/modules/shared/contracts";
-import { ChronicleError } from "@/modules/shared/errors";
+import { config } from '@/lib/config';
+import { getLlmClient, type LlmClient } from '@/modules/extraction/llm-client';
+import {
+  canonicalizeEndpoints,
+  mergeExtractedEntities,
+  mergeRelationships,
+} from '@/modules/knowledge-modeling';
+import type {
+  ExtractedEntity,
+  ExtractedRelationship,
+  ExtractionResult,
+} from '@/modules/shared/contracts';
+import { ChronicleError } from '@/modules/shared/errors';
 
-export { getLlmClient } from "@/modules/extraction/llm-client";
+export { getLlmClient } from '@/modules/extraction/llm-client';
 
 const MAX_RETRIES = 3;
 const BASE_BACKOFF_MS = 500;
@@ -40,7 +48,8 @@ const jitteredDelay = (attempt: number) => {
 // Hosted free tiers rate-limit per minute; the sub-second recovery backoff above
 // would only make the throttle worse. Wait out the minute window instead.
 const RATE_LIMIT_DELAYS_MS = [15_000, 30_000, 60_000];
-const rateLimitDelay = (attempt: number) => RATE_LIMIT_DELAYS_MS[Math.min(attempt, RATE_LIMIT_DELAYS_MS.length) - 1] ?? 60_000;
+const rateLimitDelay = (attempt: number) =>
+  RATE_LIMIT_DELAYS_MS[Math.min(attempt, RATE_LIMIT_DELAYS_MS.length) - 1] ?? 60_000;
 
 const isRateLimit = (error: unknown) => error instanceof ChronicleError && error.status === 429;
 
@@ -60,12 +69,13 @@ export const chunkReportText = (text: string, maxChars = config.extractionMaxChu
       add(piece);
       return;
     }
-    for (let start = 0; start < piece.length; start += maxChars) add(piece.slice(start, start + maxChars));
+    for (let start = 0; start < piece.length; start += maxChars)
+      add(piece.slice(start, start + maxChars));
   };
-  let current = "";
+  let current = '';
   const flush = () => {
     emit(current);
-    current = "";
+    current = '';
   };
   for (const sentence of sentences) {
     if (sentence.length > maxChars) {
@@ -73,11 +83,11 @@ export const chunkReportText = (text: string, maxChars = config.extractionMaxChu
       // respect it (word boundary when possible), or one oversized chunk would
       // blow the model's time/context budget and defeat chunking entirely.
       flush();
-      let piece = "";
+      let piece = '';
       for (const word of sentence.match(/\S+\s*/g) ?? [sentence]) {
         if (piece && piece.length + word.length > maxChars) {
           emit(piece);
-          piece = "";
+          piece = '';
         }
         piece += word;
       }
@@ -96,10 +106,10 @@ export class ExtractionFailureError extends ChronicleError {
     message: string,
     public readonly partial: ExtractionResult,
     status = 502,
-    type = "https://chronicle.local/problems/llm-unavailable",
+    type = 'https://chronicle.local/problems/llm-unavailable',
   ) {
     super(message, status, type);
-    this.name = "ExtractionFailureError";
+    this.name = 'ExtractionFailureError';
   }
 }
 
@@ -108,11 +118,21 @@ export const MAX_EVIDENCE_CHARS = 60;
 // Service-side cap: the prompt asks the model to keep evidence under 60 chars,
 // but free-tier models exceed it. Truncate after extraction so the stored
 // contract (evidence <= 60) holds regardless of what the model returned.
-export const capEvidence = (extraction: ExtractionResult, maxChars = MAX_EVIDENCE_CHARS): ExtractionResult => {
-  const truncate = (evidence: string) => (evidence.length > maxChars ? evidence.slice(0, maxChars) : evidence);
+export const capEvidence = (
+  extraction: ExtractionResult,
+  maxChars = MAX_EVIDENCE_CHARS,
+): ExtractionResult => {
+  const truncate = (evidence: string) =>
+    evidence.length > maxChars ? evidence.slice(0, maxChars) : evidence;
   return {
-    entities: extraction.entities.map((entity) => ({ ...entity, evidence: truncate(entity.evidence) })),
-    relationships: extraction.relationships.map((relationship) => ({ ...relationship, evidence: truncate(relationship.evidence) })),
+    entities: extraction.entities.map((entity) => ({
+      ...entity,
+      evidence: truncate(entity.evidence),
+    })),
+    relationships: extraction.relationships.map((relationship) => ({
+      ...relationship,
+      evidence: truncate(relationship.evidence),
+    })),
   };
 };
 
@@ -127,7 +147,11 @@ export type ExtractOptions = {
 
 const withRetry = async <T>(operation: () => Promise<T>, breaker?: CircuitBreaker): Promise<T> => {
   if (breaker?.isOpen()) {
-    throw new ChronicleError("The local model server is cooling down after repeated failures. Try again shortly.", 503, "https://chronicle.local/problems/llm-unavailable");
+    throw new ChronicleError(
+      'The local model server is cooling down after repeated failures. Try again shortly.',
+      503,
+      'https://chronicle.local/problems/llm-unavailable',
+    );
   }
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
@@ -138,13 +162,18 @@ const withRetry = async <T>(operation: () => Promise<T>, breaker?: CircuitBreake
     } catch (error) {
       lastError = error;
       breaker?.recordFailure();
-      if (attempt < MAX_RETRIES) await sleep(isRateLimit(error) ? rateLimitDelay(attempt) : jitteredDelay(attempt));
+      if (attempt < MAX_RETRIES)
+        await sleep(isRateLimit(error) ? rateLimitDelay(attempt) : jitteredDelay(attempt));
     }
   }
   throw lastError;
 };
 
-export const extractCandidates = async (text: string, client = getLlmClient(), options: ExtractOptions = {}): Promise<ExtractionResult> => {
+export const extractCandidates = async (
+  text: string,
+  client = getLlmClient(),
+  options: ExtractOptions = {},
+): Promise<ExtractionResult> => {
   const chunks = chunkReportText(text, options.maxChars);
   const totalPasses = chunks.length * 2;
   const reportProgress = async (done: number) => {
@@ -158,8 +187,16 @@ export const extractCandidates = async (text: string, client = getLlmClient(), o
     // error) instead of hardcoding 502/llm-unavailable, so callers can tell why
     // a partial extraction stopped.
     const status = error instanceof ChronicleError ? error.status : 502;
-    const type = error instanceof ChronicleError ? error.type : "https://chronicle.local/problems/llm-unavailable";
-    throw new ExtractionFailureError(error instanceof Error ? error.message : "LLM extraction failed.", capEvidence(partial), status, type);
+    const type =
+      error instanceof ChronicleError
+        ? error.type
+        : 'https://chronicle.local/problems/llm-unavailable';
+    throw new ExtractionFailureError(
+      error instanceof Error ? error.message : 'LLM extraction failed.',
+      capEvidence(partial),
+      status,
+      type,
+    );
   };
 
   // Phase 1: entity pass per chunk, schema stays small (one chunk's entities).
@@ -168,7 +205,9 @@ export const extractCandidates = async (text: string, client = getLlmClient(), o
   for (let index = 0; index < chunks.length; index += 1) {
     await reportProgress(index + 1);
     try {
-      entitiesByChunk.push(await withRetry(() => client.extractEntities(chunks[index]), options.breaker));
+      entitiesByChunk.push(
+        await withRetry(() => client.extractEntities(chunks[index]), options.breaker),
+      );
     } catch (error) {
       partial.entities = mergeExtractedEntities(entitiesByChunk.flat());
       failPartial(error);
@@ -189,7 +228,10 @@ export const extractCandidates = async (text: string, client = getLlmClient(), o
   for (let index = 0; index < chunks.length; index += 1) {
     await reportProgress(chunks.length + index + 1);
     try {
-      const found = await withRetry(() => client.extractRelationships(chunks[index], entities), options.breaker);
+      const found = await withRetry(
+        () => client.extractRelationships(chunks[index], entities),
+        options.breaker,
+      );
       allRelationships.push(...found);
     } catch (error) {
       partial.relationships = mergeRelationships(allRelationships);
