@@ -6,6 +6,7 @@ has no tagged releases yet — sections are anchored to the plan phases in
 
 ## 2026-08-05 — Web connection fixes + auth token rotation
 
+- **Fixed** CSP breaking the UI: `script-src 'self'` blocked Next.js's inline bootstrap scripts (React hydration #412, form submitted natively). Added `'unsafe-inline'` to script-src/style-src — the standard Next.js CSP; nonce-based policy remains the documented upgrade path.
 - **Fixed** `next start` not working with `output: standalone` (it never loaded `.env`
   and served stale state → persistent 401s). New `npm run start` runs
   `scripts/serve.mjs`: assembles `.next/standalone` (copies `.next/static` + `public`)
