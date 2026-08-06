@@ -321,6 +321,62 @@ button.sign-out {
   color: var(--rust);
   border-color: var(--rust);
 }
+.review-actions {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0 4px;
+}
+.review {
+  margin-top: 0;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 6px 10px;
+}
+.review.accept:hover {
+  color: var(--teal);
+  border-color: var(--teal);
+}
+.review.reject:hover {
+  color: var(--rust);
+  border-color: var(--rust);
+}
+.review.correct:hover {
+  color: var(--ink);
+  border-color: var(--muted);
+}
+.reviewed {
+  margin: 10px 0 0;
+  font-size: 0.75rem;
+  color: var(--rust);
+}
+.correct-form {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+}
+.correct-form input {
+  flex: 1;
+  padding: 8px 10px;
+  font-family: var(--font-mono), monospace;
+  font-size: 0.8rem;
+}
+.row-reject {
+  margin: 0 0 0 auto;
+  padding: 0 6px;
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+.row-reject:hover {
+  color: var(--rust);
+  border-color: var(--rust);
+}
 .inspector-stamp {
   display: flex;
   align-items: center;

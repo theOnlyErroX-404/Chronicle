@@ -72,9 +72,15 @@ type GraphEdgeItem = {
 export function GraphViewer({
   graph,
   onSelect,
+  hiddenNodes,
+  hiddenEdges,
+  renames,
 }: {
   graph: Graph;
   onSelect?: (node: GraphNode | null) => void;
+  hiddenNodes?: ReadonlySet<string>;
+  hiddenEdges?: ReadonlySet<string>;
+  renames?: ReadonlyMap<string, string>;
 }) {
   const container = useRef<HTMLDivElement>(null);
   const network = useRef<Network | null>(null);
@@ -110,14 +116,14 @@ export function GraphViewer({
         const color = clusterColorFor(graph.clusters, node.id);
         return {
           id: node.id,
-          label: node.name,
+          label: renames?.get(node.id) ?? node.name,
           color,
           shape: SHAPE_BY_TYPE[node.type] ?? 'dot',
           size: 12 + Math.min(24, Math.sqrt(degree.get(node.id) ?? 0) * 5),
           font: { color: '#e8e6f1', face: 'Arial', size: 12 },
           borderWidth: 1,
           borderColor: '#150f23',
-          hidden: false,
+          hidden: hiddenNodes?.has(node.id) ?? false,
         };
       }),
     );
@@ -134,7 +140,10 @@ export function GraphViewer({
             highlight: edge.derived ? DERIVED_COLOR : EDGE_COLOR,
           },
           font: { color: '#9a97aa', face: 'Arial', size: 9 },
-          hidden: false,
+          hidden:
+            (hiddenEdges?.has(edge.id) ?? false) ||
+            (hiddenNodes?.has(edge.source) ?? false) ||
+            (hiddenNodes?.has(edge.target) ?? false),
         };
         if (!edge.derived) item.arrows = { to: { enabled: true, scaleFactor: 0.5 } };
         else item.dashes = [4, 3];
@@ -184,20 +193,21 @@ export function GraphViewer({
     const needle = query.trim().toLocaleLowerCase();
     for (const node of nodeDataSet.current?.get() ?? []) {
       const matches = !needle || (node.label as string).toLocaleLowerCase().includes(needle);
-      if (node.hidden !== !matches) nodeDataSet.current?.update({ id: node.id, hidden: !matches });
+      const hidden = (hiddenNodes?.has(node.id as string) ?? false) || !matches;
+      if (node.hidden !== hidden) nodeDataSet.current?.update({ id: node.id, hidden });
     }
     for (const edge of edgeDataSet.current?.get() ?? []) {
-      // An edge stays invisible while its endpoints are filtered out OR the
-      // implied-edge toggle is off. Deriving visibility here keeps the render
-      // consistent without rebuilding the data objects.
+      // An edge stays invisible while its endpoints are filtered out, the
+      // implied-edge toggle is off, or the analyst rejected it.
       const fromHidden = nodeDataSet.current?.get(edge.from)?.hidden ?? false;
       const toHidden = nodeDataSet.current?.get(edge.to)?.hidden ?? false;
       const derivedHidden = edge.derived && !showDerived;
-      const hidden = fromHidden || toHidden || derivedHidden;
+      const rejected = hiddenEdges?.has(edge.id) ?? false;
+      const hidden = fromHidden || toHidden || derivedHidden || rejected;
       if (edge.hidden !== hidden) edgeDataSet.current?.update({ id: edge.id, hidden });
     }
     network.current?.redraw();
-  }, [query, showDerived]);
+  }, [query, showDerived, hiddenNodes, hiddenEdges]);
 
   return (
     <div className="graph-area">

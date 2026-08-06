@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { z } from 'zod';
-import type { Graph } from '@/modules/shared/contracts';
+import type { CorrectionInput, Graph } from '@/modules/shared/contracts';
 import {
   formatBytes,
   JOB_STAGE_LABELS,
@@ -42,6 +42,9 @@ export function ReportWorkbench() {
   const [graph, setGraph] = useState<Graph | null>(null);
   const [view, setView] = useState<View>('graph');
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [rejectedNodes, setRejectedNodes] = useState<Set<string>>(new Set());
+  const [rejectedEdges, setRejectedEdges] = useState<Set<string>>(new Set());
+  const [renames, setRenames] = useState<Map<string, string>>(new Map());
   const [message, setMessage] = useState(
     'Submit a public threat report URL or PDF to begin analysis.',
   );
@@ -49,6 +52,42 @@ export function ReportWorkbench() {
   const active = Boolean(job && !['done', 'failed'].includes(job.status));
   const activeJob = active && job ? job : null;
   const activeStage = activeJob ? jobStage(activeJob.status, activeJob.progress) : null;
+
+  // Persist an analyst correction to the feedback log, then apply it locally so
+  // the graph reflects the review without a refresh: rejected entities/edges
+  // disappear from the canvas, corrected names relabel the node.
+  const review = async (input: CorrectionInput): Promise<boolean> => {
+    if (!reportId) return false;
+    try {
+      const response = await fetch(`/api/v1/reports/${reportId}/feedback`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      });
+      if (response.status === 401) {
+        setSession('out');
+        return false;
+      }
+      if (!response.ok) {
+        setMessage(await apiError(response));
+        return false;
+      }
+      if (input.action === 'reject' && input.targetType === 'entity') {
+        setRejectedNodes((current) => new Set(current).add(input.targetId));
+      } else if (input.action === 'reject' && input.targetType === 'relationship') {
+        setRejectedEdges((current) => new Set(current).add(input.targetId));
+      } else if (input.action === 'correct' && input.targetType === 'entity') {
+        const correctedName = input.correctedValue?.name;
+        if (typeof correctedName === 'string') {
+          setRenames((current) => new Map(current).set(input.targetId, correctedName));
+        }
+      }
+      return true;
+    } catch {
+      setMessage('Could not save the correction.');
+      return false;
+    }
+  };
 
   // The session cookie is HttpOnly (invisible to JS) and SameSite=Strict, so
   // the token never touches the page. Probe the explicit session route: 401
@@ -157,6 +196,10 @@ export function ReportWorkbench() {
     setJob({ id: created.report_id, status: created.status });
     setReportId(null);
     setGraph(null);
+    setSelection(null);
+    setRejectedNodes(new Set());
+    setRejectedEdges(new Set());
+    setRenames(new Map());
     setMessage('Report accepted. Analysis is in progress.');
     return true;
   };
@@ -344,6 +387,9 @@ export function ReportWorkbench() {
                   <GraphViewer
                     graph={graph}
                     onSelect={(node) => setSelection(node ? { kind: 'node', node } : null)}
+                    hiddenNodes={rejectedNodes}
+                    hiddenEdges={rejectedEdges}
+                    renames={renames}
                   />
                 )}
                 {view === 'timeline' && (
@@ -359,7 +405,14 @@ export function ReportWorkbench() {
                   />
                 )}
               </div>
-              <Inspector selection={selection} graph={graph} />
+              <Inspector
+                selection={selection}
+                graph={graph}
+                hiddenNodes={rejectedNodes}
+                hiddenEdges={rejectedEdges}
+                renames={renames}
+                onReview={review}
+              />
             </div>
           )}
         </>
