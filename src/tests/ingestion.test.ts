@@ -82,6 +82,23 @@ describe('URL report ingestion', () => {
     ).rejects.toMatchObject({ status: 502 });
   });
 
+  it('retries a transient fetch failure and succeeds on the second attempt', async () => {
+    vi.mocked(fetchPinned)
+      .mockRejectedValueOnce(new TypeError('socket hang up'))
+      .mockResolvedValueOnce(response(htmlReport, 'text/html'));
+    const text = await ingestReport({ kind: 'url', url: 'https://example.com/report.html' });
+    expect(text).toContain('APT41 used EvilBoat');
+    expect(vi.mocked(fetchPinned)).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after all retries fail (bounded, still 502)', async () => {
+    vi.mocked(fetchPinned).mockRejectedValue(new TypeError('ECONNRESET'));
+    await expect(
+      ingestReport({ kind: 'url', url: 'https://example.com/report.txt' }),
+    ).rejects.toMatchObject({ status: 502 });
+    expect(vi.mocked(fetchPinned).mock.calls.length).toBeLessThanOrEqual(3);
+  });
+
   it('propagates a non-ok HTTP status as 502', async () => {
     vi.mocked(fetchPinned).mockResolvedValue(response('nope', 'text/plain', 500));
     await expect(

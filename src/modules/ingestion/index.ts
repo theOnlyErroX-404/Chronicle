@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { config } from '@/lib/config';
 import { resolveSafePublicUrl } from '@/modules/ingestion/security';
 import { fetchPinned } from '@/modules/ingestion/transport';
+import type { SafePublicUrl } from '@/modules/ingestion/security';
 import { ensureUsableText, normalizeText } from '@/modules/ingestion/text';
 import type { PdfWorkerInput, PdfWorkerOutput } from '@/modules/ingestion/pdf-worker-protocol';
 import { ChronicleError } from '@/modules/shared/errors';
@@ -12,6 +13,24 @@ import { readStreamWithLimit } from '@/modules/shared/stream';
 export type IngestionSource =
   { kind: 'url'; url: string } | { kind: 'pdf'; filename: string; bytes: Uint8Array };
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Transient network failures (connection reset, TLS hiccup, momentary DNS
+// miss) are common against real vendor sites: a single-shot fetch turns one
+// hiccup into a failed report. Retry the pinned request a bounded number of
+// times with a short backoff. Total worst-case added latency stays under
+// (attempts - 1) * maxRetryDelayMs; each attempt still carries the full
+// URL_FETCH_TIMEOUT_MS deadline, so a genuinely slow host is not masked.
+const retryPinnedFetch = async (target: SafePublicUrl, attemptsLeft = 3): Promise<Response> => {
+  try {
+    return await fetchPinned(target, config.urlFetchTimeoutMs);
+  } catch (error) {
+    if (attemptsLeft <= 1) throw error;
+    await sleep(300 * (4 - attemptsLeft));
+    return retryPinnedFetch(target, attemptsLeft - 1);
+  }
+};
+
 const fetchPublicReport = async (
   rawUrl: string,
   redirects = 0,
@@ -19,13 +38,20 @@ const fetchPublicReport = async (
   if (redirects > config.maxRedirects)
     throw new ChronicleError('The report URL redirected too many times.');
   const target = await resolveSafePublicUrl(rawUrl);
-  const response = await fetchPinned(target, config.urlFetchTimeoutMs).catch(() => {
+  // Network-level failures (DNS/conn refused/reset, TLS, timeouts) are often
+  // transient — a vendor site that hiccups once shouldn't fail the whole
+  // report. Retry the raw socket pass with a short backoff; anything outward
+  // (a redirect, an HTTP status, a parsed body) is handled below, not here.
+  let response: Response;
+  try {
+    response = await retryPinnedFetch(target);
+  } catch {
     throw new ChronicleError(
       'The report URL could not be fetched.',
       502,
       'https://chronicle.local/problems/fetch-failed',
     );
-  });
+  }
 
   if ([301, 302, 303, 307, 308].includes(response.status)) {
     const location = response.headers.get('location');

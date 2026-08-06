@@ -4,6 +4,15 @@ All notable changes to Chronicle are documented here, newest first. The project
 has no tagged releases yet — sections are anchored to the plan phases in
 `docs/tasks.md`. Version tags are a planned 2-G (deploy) item.
 
+## 2026-08-06 — Ingestion resilience: transient fetch retry (branch feat/graph-frontend)
+
+- URL ingestion now retries transient network failures (connection reset, TLS
+  hiccup, momentary DNS miss) up to 3 bounded attempts with backoff, instead of
+  letting a single socket hiccup fail the whole report. HTTP-status errors,
+  redirects, and size limits are still single-shot (retrying them would not
+  change the outcome).
+- 2 new tests; 228 passing (was 226).
+
 ## 2026-08-06 — Graph redesign: provenance, implied edges, vis-network UI (branch feat/graph-frontend)
 
 - **Graph contract enriched (additive)**: `GraphNode` now carries extraction
