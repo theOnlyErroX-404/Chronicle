@@ -1,0 +1,98 @@
+# Chronicle stack — the single source of truth for the deployed shape (Coolify
+# Docker Compose build pack, or plain `docker compose up`). The app image is
+# prebuilt by cd.yml and pushed to GHCR; compose only pulls and runs it, so
+# deploy hosts don't need a toolchain.
+#
+# Local dev on the dev box: services here (postgres/redis) shadow the ad-hoc
+# containers in README; Ollama is NOT containerized here on purpose — it runs as
+# host systemd (models already pulled), and containers reach it via
+# host.docker.internal:host-gateway.
+#
+# .env file: every value under `environment:` below defaults to a .env
+# interpolation; copy `.env.example` (or the dev box's .env) to fill them.
+
+name: chronicle
+
+services:
+  app:
+    image: ghcr.io/theonlyerrox-404/chronicle:main
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - '3210:3210'
+    environment:
+      PORT: '3210'
+      HOSTNAME: '0.0.0.0'
+      NODE_ENV: 'production'
+      CHRONICLE_API_TOKEN: '${CHRONICLE_API_TOKEN:?set in .env}'
+      DATABASE_URL: '${DATABASE_URL:?set in .env}'
+      REPORT_STORE_BACKEND: 'postgres'
+      JOB_QUEUE_BACKEND: 'redis'
+      REDIS_URL: '${REDIS_URL:-redis://redis:6379}'
+      OLLAMA_BASE_URL: 'http://host.docker.internal:11434'
+      OLLAMA_CHAT_MODEL: '${OLLAMA_CHAT_MODEL:-nemotron-mini:latest}'
+      LLM_TIMEOUT_MS: '${LLM_TIMEOUT_MS:-600000}'
+      EXTRACTION_MAX_CHUNK_CHARS: '${EXTRACTION_MAX_CHUNK_CHARS:-2100}'
+      EXTRACTION_FORMAT: 'schema'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: ghcr.io/theonlyerrox-404/chronicle:main
+    pull_policy: always
+    restart: unless-stopped
+    command: ['node', 'worker.cjs']
+    environment:
+      NODE_ENV: 'production'
+      CHRONICLE_API_TOKEN: '${CHRONICLE_API_TOKEN:?set in .env}'
+      DATABASE_URL: '${DATABASE_URL:?set in .env}'
+      REPORT_STORE_BACKEND: 'postgres'
+      JOB_QUEUE_BACKEND: 'redis'
+      REDIS_URL: '${REDIS_URL:-redis://redis:6379}'
+      OLLAMA_BASE_URL: 'http://host.docker.internal:11434'
+      OLLAMA_CHAT_MODEL: '${OLLAMA_CHAT_MODEL:-nemotron-mini:latest}'
+      LLM_TIMEOUT_MS: '${LLM_TIMEOUT_MS:-600000}'
+      EXTRACTION_MAX_CHUNK_CHARS: '${EXTRACTION_MAX_CHUNK_CHARS:-2100}'
+      EXTRACTION_FORMAT: 'schema'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: '${POSTGRES_USER:-chronicle}'
+      POSTGRES_PASSWORD: '${POSTGRES_PASSWORD:?set in .env}'
+      POSTGRES_DB: '${POSTGRES_DB:-chronicle}'
+    volumes:
+      - chronicle-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-chronicle} -d ${POSTGRES_DB:-chronicle}']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - chronicle-redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  chronicle-pgdata:
+  chronicle-redisdata:

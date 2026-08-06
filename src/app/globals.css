@@ -94,6 +94,16 @@ button:disabled {
   cursor: progress;
   opacity: 0.6;
 }
+button.sign-out {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid #40516a;
+  margin-left: 8px;
+}
+.sign-out:hover {
+  color: var(--ink);
+  border-color: #64748b;
+}
 .status {
   min-height: 1.5rem;
   margin: 24px 0 4px;
