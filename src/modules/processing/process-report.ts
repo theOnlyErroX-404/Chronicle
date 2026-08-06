@@ -74,7 +74,7 @@ export const processReport = async (reportId: string, source: IngestionSource) =
     });
     const completed = completeEntityEndpoints(extraction);
     await reportStore.update(reportId, {
-      extraction: completed,
+      extraction: { ...completed, stats: extraction.stats },
       status: 'modeling',
       progress: 'modeling',
     });
@@ -97,7 +97,7 @@ export const processReport = async (reportId: string, source: IngestionSource) =
       const stixBundle = buildStixLiteBundle(reportId, graph);
       try {
         await reportStore.update(reportId, {
-          extraction: completed,
+          extraction: { ...completed, stats: error.partial.stats },
           graph,
           stixBundle,
           status: 'failed',

@@ -9,6 +9,7 @@ import type {
   ExtractedEntity,
   ExtractedRelationship,
   ExtractionResult,
+  ExtractionStats,
 } from '@/modules/shared/contracts';
 import { ChronicleError } from '@/modules/shared/errors';
 
@@ -146,13 +147,12 @@ export type ExtractOptions = {
 };
 
 const withRetry = async <T>(operation: () => Promise<T>, breaker?: CircuitBreaker): Promise<T> => {
-  if (breaker?.isOpen()) {
-    throw new ChronicleError(
-      'The local model server is cooling down after repeated failures. Try again shortly.',
-      503,
-      'https://chronicle.local/problems/llm-unavailable',
-    );
-  }
+  // A tripped breaker means the model server needs its cooldown, not that the
+  // run is over: fail-fast here would abort every remaining chunk on an open
+  // breaker and blow the run's failure threshold off a single flaky chunk.
+  // Wait out the cooldown (isOpen is a pure time check, so this is bounded),
+  // then proceed as normal.
+  while (breaker?.isOpen()) await sleep(25);
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
     try {
@@ -175,14 +175,41 @@ export const extractCandidates = async (
   options: ExtractOptions = {},
 ): Promise<ExtractionResult> => {
   const chunks = chunkReportText(text, options.maxChars);
+  const totalChunks = chunks.length;
   const totalPasses = chunks.length * 2;
   const reportProgress = async (done: number) => {
     await options.onProgress?.({ current: done, total: totalPasses });
   };
 
+  // A single flaky chunk must not discard the whole extraction: a transient
+  // failure is recorded and the next chunk is tried. We only abort when the
+  // chunk failure count is actually insurmountable (all chunks failed, or
+  // more than ~1/4 of them did) — otherwise a mostly-healthy run still ships.
+  const maxFailed = Math.max(2, Math.ceil(totalChunks * 0.25));
+  const abortAfter = (failed: number) => failed >= totalChunks || failed > maxFailed;
+
   const entitiesByChunk: ExtractedEntity[][] = [];
+  const allRelationships: ExtractedRelationship[] = [];
   const partial: ExtractionResult = { entities: [], relationships: [] };
-  const failPartial = (error: unknown): never => {
+  const failureMessage = (index: number, error: unknown) =>
+    `chunk ${index + 1}/${totalChunks}: ${
+      error instanceof Error ? error.message.slice(0, 200) : 'unknown error'
+    }`;
+
+  // ponytail: per-chunk retries stay (withRetry, shared breaker) but a failed
+  // chunk no longer aborts the run — failures are counted and surfaced via
+  // stats. Upgrade path: weighted chunk retries when a specific phase shows a
+  // systematic failure pattern.
+  let phaseName: ExtractionStats['phase'] = 'entities';
+  let failed = 0;
+  const reasons: string[] = [];
+  const statsOf = (stopPhase: ExtractionStats['phase']): ExtractionStats => ({
+    totalChunks,
+    failedChunks: failed,
+    phase: stopPhase,
+    reasons: reasons.slice(0, 20),
+  });
+  const failPartial = (phase: ExtractionStats['phase'], error: unknown): never => {
     // Reflect the real failure (rate limit, timeout, invalid output, upstream
     // error) instead of hardcoding 502/llm-unavailable, so callers can tell why
     // a partial extraction stopped.
@@ -193,7 +220,7 @@ export const extractCandidates = async (
         : 'https://chronicle.local/problems/llm-unavailable';
     throw new ExtractionFailureError(
       error instanceof Error ? error.message : 'LLM extraction failed.',
-      capEvidence(partial),
+      { ...capEvidence(partial), stats: statsOf(phase) },
       status,
       type,
     );
@@ -210,7 +237,9 @@ export const extractCandidates = async (
       );
     } catch (error) {
       partial.entities = mergeExtractedEntities(entitiesByChunk.flat());
-      failPartial(error);
+      failed += 1;
+      reasons.push(`[entities] ${failureMessage(index, error)}`);
+      if (abortAfter(failed)) failPartial('entities', error);
     }
   }
 
@@ -219,12 +248,18 @@ export const extractCandidates = async (
   // relationship passes below can link entities mentioned in different chunks.
   const entities = mergeExtractedEntities(entitiesByChunk.flat());
   partial.entities = entities;
-  if (entities.length === 0) return { entities: [], relationships: [] };
+  if (entities.length === 0) {
+    return {
+      entities: [],
+      relationships: [],
+      stats: statsOf(phaseName),
+    };
+  }
 
   // Phase 2: relationship pass per chunk, but against the full merged entity
   // set. Chunk text still limits what the model may cite as evidence, while the
   // schema enum covers every entity in the report (cross-chunk links included).
-  const allRelationships: ExtractedRelationship[] = [];
+  phaseName = 'relationships';
   for (let index = 0; index < chunks.length; index += 1) {
     await reportProgress(chunks.length + index + 1);
     try {
@@ -235,12 +270,16 @@ export const extractCandidates = async (
       allRelationships.push(...found);
     } catch (error) {
       partial.relationships = mergeRelationships(allRelationships);
-      failPartial(error);
+      failed += 1;
+      reasons.push(`[relationships] ${failureMessage(index, error)}`);
+      if (abortAfter(failed)) failPartial('relationships', error);
     }
   }
+  phaseName = null;
 
-  return capEvidence({
-    entities,
-    relationships: mergeRelationships(canonicalizeEndpoints(allRelationships, entities)),
-  });
+  const merged = mergeRelationships(canonicalizeEndpoints(allRelationships, entities));
+  return {
+    ...capEvidence({ entities, relationships: merged }),
+    stats: statsOf(phaseName),
+  };
 };
