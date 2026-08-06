@@ -23,7 +23,8 @@ const base = 'http://chronicle.local/api/v1/reports/r1/feedback';
 
 const graph: Graph = {
   nodes: [{ id: 'n1', type: 'threat-actor', name: 'APT29', confidence: 0.9 }],
-  edges: [{ id: 'e1', source: 'n1', target: 'n1', type: 'uses', confidence: 0.8 }],
+  edges: [{ id: 'e1', source: 'n1', target: 'n1', type: 'uses', confidence: 0.8, derived: false }],
+  clusters: [],
 };
 
 const baseReport = (overrides: Partial<ReportRecord> = {}): ReportRecord => ({

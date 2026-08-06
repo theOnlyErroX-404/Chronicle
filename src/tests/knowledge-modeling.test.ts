@@ -5,6 +5,7 @@ import {
   completeEntityEndpoints,
   inferEndpointType,
 } from '@/modules/knowledge-modeling';
+import type { ExtractionResult } from '@/modules/shared/contracts';
 
 describe('knowledge modeling', () => {
   it('deduplicates entities and retains relationships whose endpoints resolve', () => {
@@ -184,6 +185,189 @@ describe('completeEntityEndpoints', () => {
   });
 });
 
+describe('graph provenance and derived edges', () => {
+  const entity = (
+    type: 'threat-actor' | 'malware' | 'tool' | 'indicator',
+    name: string,
+    evidence = 'a',
+  ): {
+    type: 'threat-actor' | 'malware' | 'tool' | 'indicator';
+    name: string;
+    confidence: number;
+    evidence: string;
+  } => ({
+    type,
+    name,
+    confidence: 0.9,
+    evidence,
+  });
+
+  it('carries evidence and aliases through to graph nodes', () => {
+    const graph = buildGraph({
+      entities: [
+        {
+          type: 'threat-actor',
+          name: 'Midnight Blizzard',
+          aliases: ['Cozy Bear'],
+          confidence: 0.9,
+          evidence: 'the actor group',
+        },
+      ],
+      relationships: [],
+    });
+    const node = graph.nodes[0];
+    expect(node.evidence).toBe('the actor group');
+    expect(node.aliases).toEqual(['Cozy Bear']);
+  });
+
+  it('marks extracted edges as not derived and passes their evidence through', () => {
+    const graph = buildGraph({
+      entities: [entity('threat-actor', 'APT29'), entity('malware', 'EvilBoat')],
+      relationships: [
+        {
+          source: 'APT29',
+          target: 'EvilBoat',
+          type: 'uses',
+          confidence: 0.85,
+          evidence: 'uses EvilBoat',
+        },
+      ],
+    });
+    expect(graph.edges).toHaveLength(1);
+    expect(graph.edges[0].evidence).toBe('uses EvilBoat');
+    expect(graph.edges[0].derived).toBe(false);
+  });
+
+  it('derives no implied edges without co-mention or shared infrastructure', () => {
+    const graph = buildGraph({
+      entities: [entity('threat-actor', 'APT29'), entity('malware', 'EvilBoat')],
+      relationships: [
+        {
+          source: 'APT29',
+          target: 'EvilBoat',
+          type: 'uses',
+          confidence: 0.85,
+          evidence: 'uses EvilBoat',
+        },
+      ],
+    });
+    expect(graph.edges.filter((edge) => edge.derived)).toHaveLength(0);
+  });
+
+  it('derives associated-with edges for entities co-mentioned in evidence', () => {
+    const graph = buildGraph({
+      entities: [
+        entity('threat-actor', 'Lazarus Group'),
+        entity('malware', 'AppleJeus'),
+        entity('tool', 'Telegram'),
+      ],
+      relationships: [
+        {
+          source: 'Lazarus Group',
+          target: 'AppleJeus',
+          type: 'uses',
+          confidence: 1,
+          evidence: 'Lazarus Group uses AppleJeus and spreads it via Telegram',
+        },
+      ],
+    });
+    const derived = graph.edges.filter((edge) => edge.derived);
+    expect(derived).toHaveLength(2);
+    const telegram = graph.nodes.find((node) => node.name === 'Telegram');
+    for (const edge of derived) {
+      expect(edge.type).toBe('associated-with');
+      expect(edge.confidence).toBe(0.3);
+      expect([edge.source, edge.target]).toContain(telegram?.id);
+    }
+  });
+
+  it('derives associated-with edges for indicators under the same registrable domain', () => {
+    const graph = buildGraph({
+      entities: [
+        entity('indicator', 'c2a.example.com'),
+        entity('indicator', 'c2b.example.com'),
+        entity('indicator', 'backup.example.org'),
+      ],
+      relationships: [],
+    });
+    const derived = graph.edges.filter((edge) => edge.derived);
+    expect(derived).toHaveLength(1);
+    expect(derived[0].type).toBe('associated-with');
+    expect(derived[0].evidence).toContain('example.com');
+  });
+
+  it('computes connected-component clusters named by their hub', () => {
+    const graph = buildGraph({
+      entities: [
+        entity('threat-actor', 'APT41'),
+        entity('malware', 'EvilBoat'),
+        entity('tool', 'Solo'),
+      ],
+      relationships: [
+        {
+          source: 'APT41',
+          target: 'EvilBoat',
+          type: 'uses',
+          confidence: 1,
+          evidence: 'uses EvilBoat',
+        },
+      ],
+    });
+    expect(graph.clusters).toHaveLength(1);
+    expect(graph.clusters[0].label).toBe('APT41');
+    expect(graph.clusters[0].nodeIds).toHaveLength(2);
+  });
+
+  it('deterministically derives the same edges on repeated builds', () => {
+    const extraction: ExtractionResult = {
+      entities: [
+        entity('threat-actor', 'Kimsuky'),
+        entity('malware', 'BabyShark'),
+        entity('tool', 'scout'),
+      ],
+      relationships: [
+        {
+          source: 'Kimsuky',
+          target: 'BabyShark',
+          type: 'uses',
+          confidence: 1,
+          evidence: 'Kimsuky operates BabyShark via scout.',
+        },
+      ],
+    };
+    const first = buildGraph(extraction);
+    const second = buildGraph(extraction);
+    expect(first.edges.filter((edge) => edge.derived).map((edge) => edge.id)).toEqual(
+      second.edges.filter((edge) => edge.derived).map((edge) => edge.id),
+    );
+    expect(first.clusters).toEqual(second.clusters);
+  });
+
+  it('excludes derived edges from the STIX bundle', () => {
+    const graph = buildGraph({
+      entities: [
+        entity('threat-actor', 'Kimsuky'),
+        entity('malware', 'BabyShark'),
+        entity('tool', 'scout'),
+      ],
+      relationships: [
+        {
+          source: 'Kimsuky',
+          target: 'BabyShark',
+          type: 'uses',
+          confidence: 1,
+          evidence: 'Kimsuky operates BabyShark via scout.',
+        },
+      ],
+    });
+    const bundle = buildStixLiteBundle('report-1', graph);
+    const relationships = (bundle.objects as Array<{ type: string }>).filter(
+      (object) => object.type === 'relationship',
+    );
+    expect(relationships).toHaveLength(1);
+  });
+});
+
 describe('inferEndpointType', () => {
   it('classifies IPs, domains, emails, CVEs, and file paths deterministically', () => {
     expect(inferEndpointType('198.51.100.7')).toBe('indicator');
@@ -307,7 +491,9 @@ describe('STIX bundle shape', () => {
     expect(bundle.type).toBe('bundle');
     expect(bundle.spec_version).toBe('2.1');
     expect(bundle.id).toMatch(/^bundle--[0-9a-f-]{36}$/);
-    expect(objects.length).toBe(graph.nodes.length + graph.edges.length);
+    expect(objects.length).toBe(
+      graph.nodes.length + graph.edges.filter((edge) => !edge.derived).length,
+    );
   });
 
   it('emits well-formed SDO objects with consistent ids and metadata', () => {
@@ -335,7 +521,8 @@ describe('STIX bundle shape', () => {
 
   it('emits relationships whose source_ref and target_ref resolve to bundle object ids', () => {
     const objectIds = new Set(objects.map((object) => object.id));
-    expect(relationships).toHaveLength(graph.edges.length);
+    const extractedEdges = graph.edges.filter((edge) => !edge.derived);
+    expect(relationships).toHaveLength(extractedEdges.length);
     for (const relationship of relationships) {
       expect(relationship.relationship_type).toMatch(/^uses$|^attributed-to$/);
       expect(objectIds.has(relationship.source_ref as string)).toBe(true);

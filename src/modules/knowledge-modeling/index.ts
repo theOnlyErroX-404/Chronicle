@@ -5,6 +5,8 @@ import type {
   ExtractedRelationship,
   ExtractionResult,
   Graph,
+  GraphCluster,
+  GraphEdge,
   GraphNode,
 } from '@/modules/shared/contracts';
 
@@ -126,6 +128,200 @@ const resolveEntities = (entities: ExtractedEntity[]) => {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const CVE_RE = /^cve-\d{4}-\d{4,}$/i;
 const DOMAIN_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/i;
+const COMPOUND_TLDS = new Set([
+  'co.uk',
+  'org.uk',
+  'net.uk',
+  'com.au',
+  'net.au',
+  'co.jp',
+  'co.in',
+  'com.cn',
+  'org.cn',
+  'com.br',
+]);
+
+// Longest set of trailing labels that is still a shared registrable domain
+// (example.com -> example.com; example.co.uk -> example.co.uk).
+const registrableDomain = (hostname: string): string | null => {
+  const host = hostname
+    .toLocaleLowerCase()
+    .replace(/^[a-z]+:\/\//, '')
+    .split('/')[0];
+  if (!DOMAIN_RE.test(host)) return null;
+  const labels = host.split('.');
+  const width = labels.length > 2 && COMPOUND_TLDS.has(labels.slice(-2).join('.')) ? 3 : 2;
+  if (labels.length < width) return null;
+  return labels.slice(-width).join('.');
+};
+
+const mentions = (evidence: string, name: string): boolean => {
+  const needle = normalizeName(name);
+  if (needle.length < 3) return false;
+  const haystack = evidence.toLocaleLowerCase();
+  let index = 0;
+  while ((index = haystack.indexOf(needle, index)) !== -1) {
+    const before = index === 0 ? ' ' : haystack[index - 1];
+    const after = haystack[index + needle.length] ?? ' ';
+    if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return true;
+    index += needle.length;
+  }
+  return false;
+};
+
+// Deterministic id for derived edges: same pair + rule always yields the same
+// edge, so tests and repeated rebuilds are stable (unlike extracted edges,
+// which use randomUUID).
+const derivedEdgeId = (source: string, target: string, seed: string) =>
+  `derived--${createHash('sha256')
+    .update([source, target, seed].join('|'))
+    .digest('hex')
+    .slice(0, 12)}`;
+
+const addDerived = (
+  edges: GraphEdge[],
+  seen: Set<string>,
+  nameIndex: Map<string, string>,
+  sourceName: string,
+  targetName: string,
+  evidence: string,
+) => {
+  const source = nameIndex.get(normalizeName(sourceName));
+  const target = nameIndex.get(normalizeName(targetName));
+  if (!source || !target || source === target) return;
+  const key = source < target ? `${source}|${target}` : `${target}|${source}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  const [from, to] = key.split('|') as [string, string];
+  edges.push({
+    id: derivedEdgeId(from, to, 'associated-with'),
+    source: from,
+    target: to,
+    type: 'associated-with',
+    confidence: 0.3,
+    evidence,
+    derived: true,
+  });
+};
+
+const unorderedPairKey = (source: string, target: string) =>
+  source < target ? `${source}|${target}` : `${target}|${source}`;
+
+// Deterministic, evidence-anchored density: report graphs are sparser than a
+// codebase graph (the reference the UI is modeled on), so the model enriches
+// them with two conservative rules. Both are flagged `derived` — the UI
+// renders them dashed and offers a toggle, so they are never mistaken for
+// faithful extraction.
+export const deriveImpliedEdges = (
+  extraction: ExtractionResult,
+  nameIndex: Map<string, string>,
+  nodes: ResolvedEntity[],
+): GraphEdge[] => {
+  const derived: GraphEdge[] = [];
+  // Seed with every extraction edge's pair so we never derive a duplicate of a
+  // faithful link (e.g. evidence that names the endpoints themselves).
+  const seen = new Set<string>();
+  for (const relationship of extraction.relationships) {
+    const source = nameIndex.get(normalizeName(relationship.source));
+    const target = nameIndex.get(normalizeName(relationship.target));
+    if (source && target && source !== target) seen.add(unorderedPairKey(source, target));
+  }
+  // Rule 1: co-mention. Entities named in the same relationship evidence are
+  // topically linked to that relationship's endpoints (associated-with).
+  for (const relationship of extraction.relationships) {
+    if (!relationship.evidence) continue;
+    let mentionsCount = 0;
+    for (const [name] of nameIndex) {
+      if (mentionsCount >= 6) break; // ponytail: cap bounds worst-case dense reports
+      if (!mentions(relationship.evidence, name)) continue;
+      mentionsCount += 1;
+      addDerived(derived, seen, nameIndex, relationship.source, name, relationship.evidence);
+      addDerived(derived, seen, nameIndex, relationship.target, name, relationship.evidence);
+    }
+  }
+  // Rule 2: shared infrastructure. Indicator hostnames under the same
+  // registrable domain are associated (a.example.com ~ b.example.com).
+  const byDomain = new Map<string, string[]>();
+  for (const node of nodes) {
+    const domain = registrableDomain(node.name);
+    if (!domain) continue;
+    const members = byDomain.get(domain) ?? [];
+    members.push(node.name);
+    byDomain.set(domain, members);
+  }
+  for (const [domain, members] of byDomain) {
+    if (members.length < 2) continue;
+    for (let i = 0; i < members.length; i += 1) {
+      for (let j = i + 1; j < members.length; j += 1) {
+        addDerived(
+          derived,
+          seen,
+          nameIndex,
+          members[i],
+          members[j],
+          `Shares infrastructure: ${domain}`,
+        );
+      }
+    }
+  }
+  return derived;
+};
+
+// Connected components of the graph (union of extracted + derived edges).
+// Singletons are omitted: only meaningful groupings get a cluster. The label
+// is the hub node (highest degree), mirroring Graphify's community naming.
+const computeClusters = (nodes: GraphNode[], edges: GraphEdge[]): GraphCluster[] => {
+  const adjacency = new Map<string, Set<string>>();
+  const degree = new Map<string, number>();
+  const sources = new Map<string, number>();
+  for (const edge of edges) {
+    sources.set(edge.source, (sources.get(edge.source) ?? 0) + 1);
+    for (const nodeId of [edge.source, edge.target]) {
+      const neighbors = adjacency.get(nodeId) ?? new Set();
+      const other = nodeId === edge.source ? edge.target : edge.source;
+      neighbors.add(other);
+      adjacency.set(nodeId, neighbors);
+      degree.set(nodeId, (degree.get(nodeId) ?? 0) + 1);
+    }
+  }
+  const visited = new Set<string>();
+  const clusters: GraphCluster[] = [];
+  for (const node of nodes) {
+    if (visited.has(node.id) || !adjacency.has(node.id)) continue;
+    const members: string[] = [];
+    const queue = [node.id];
+    visited.add(node.id);
+    while (queue.length > 0) {
+      const current = queue.pop()!;
+      members.push(current);
+      for (const neighbor of adjacency.get(current) ?? []) {
+        if (!visited.has(neighbor)) {
+          visited.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+    }
+    members.sort();
+    // Hub = highest degree, ties broken by how often the node anchors an edge
+    // as its source (actors lead relationships: "APT41 uses EvilBoat").
+    let hub = members[0];
+    for (const member of members) {
+      const isBetter =
+        (degree.get(member) ?? 0) > (degree.get(hub) ?? 0) ||
+        ((degree.get(member) ?? 0) === (degree.get(hub) ?? 0) &&
+          (sources.get(member) ?? 0) > (sources.get(hub) ?? 0));
+      if (isBetter) hub = member;
+    }
+    const hubNode = nodes.find((candidate) => candidate.id === hub);
+    clusters.push({
+      id: `cluster--${createHash('sha256').update(members.join('|')).digest('hex').slice(0, 12)}`,
+      label: hubNode?.name ?? hub,
+      nodeIds: members,
+    });
+  }
+  clusters.sort((a, b) => a.label.localeCompare(b.label));
+  return clusters;
+};
 
 // Strong, deterministic type evidence: the name IS the pattern, not just a
 // passing resemblance. Used both to retype misclassified entities and to infer
@@ -223,13 +419,15 @@ export const canonicalizeEndpoints = (
 
 export const buildGraph = (extraction: ExtractionResult): Graph => {
   const { entities, nameIndex } = resolveEntities(extraction.entities);
-  const nodes: GraphNode[] = entities.map(({ id, type, name, confidence }) => ({
+  const nodes: GraphNode[] = entities.map(({ id, type, name, confidence, evidence, aliases }) => ({
     id,
     type,
     name,
     confidence,
+    evidence,
+    aliases,
   }));
-  const edges = extraction.relationships.flatMap((relationship) => {
+  const edges: GraphEdge[] = extraction.relationships.flatMap((relationship) => {
     const source = nameIndex.get(normalizeName(relationship.source));
     const target = nameIndex.get(normalizeName(relationship.target));
     if (!source || !target || source === target) return [];
@@ -240,10 +438,16 @@ export const buildGraph = (extraction: ExtractionResult): Graph => {
         target,
         type: relationship.type,
         confidence: relationship.confidence,
+        evidence: relationship.evidence,
+        derived: false,
       },
     ];
   });
-  return { nodes, edges };
+  // The derived pass needs the merged, id-resolved entity set.
+  const derived = deriveImpliedEdges(extraction, nameIndex, entities);
+  edges.push(...derived);
+  const clusters = computeClusters(nodes, edges);
+  return { nodes, edges, clusters };
 };
 
 const stixTypeFor = (entity: GraphNode) => {
@@ -312,23 +516,27 @@ export const buildStixLiteBundle = (reportId: string, graph: Graph) => {
       }
       return object;
     }),
-    ...graph.edges.map((edge) => {
-      const relationshipType = STIX_RELATIONSHIP_TYPES.has(edge.type)
-        ? edge.type
-        : `x_chronicle_${edge.type}`;
-      return {
-        type: 'relationship',
-        spec_version: '2.1',
-        id: `relationship--${edge.id}`,
-        created: now,
-        modified: now,
-        relationship_type: relationshipType,
-        source_ref: stixIdByNode.get(edge.source),
-        target_ref: stixIdByNode.get(edge.target),
-        confidence: Math.round(edge.confidence * 100),
-        x_chronicle_report_id: reportId,
-      };
-    }),
+    ...graph.edges
+      // Derived edges are deterministic connective tissue for the UI, not
+      // extraction; a STIX bundle must stay faithful to the report.
+      .filter((edge) => !edge.derived)
+      .map((edge) => {
+        const relationshipType = STIX_RELATIONSHIP_TYPES.has(edge.type)
+          ? edge.type
+          : `x_chronicle_${edge.type}`;
+        return {
+          type: 'relationship',
+          spec_version: '2.1',
+          id: `relationship--${edge.id}`,
+          created: now,
+          modified: now,
+          relationship_type: relationshipType,
+          source_ref: stixIdByNode.get(edge.source),
+          target_ref: stixIdByNode.get(edge.target),
+          confidence: Math.round(edge.confidence * 100),
+          x_chronicle_report_id: reportId,
+        };
+      }),
   ];
   return { type: 'bundle', id: `bundle--${randomUUID()}`, spec_version: '2.1', objects };
 };

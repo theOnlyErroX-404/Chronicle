@@ -117,6 +117,7 @@ describe('PostgresReportStore (fake Prisma delegate)', () => {
     const graph: Graph = {
       nodes: [{ id: 'a', name: 'EvilRAT', type: 'malware', confidence: 1 }],
       edges: [],
+      clusters: [],
     };
     const stixBundle = { type: 'bundle', objects: [] };
     const attck: AttckMapping[] = [
@@ -210,6 +211,7 @@ describe.skipIf(!process.env.DATABASE_URL)('PostgresReportStore (live)', () => {
     const graph: Graph = {
       nodes: [{ id: 'a', name: 'EvilRAT', type: 'malware', confidence: 1 }],
       edges: [],
+      clusters: [],
     };
     const stixBundle = { type: 'bundle', objects: [] };
     const feedback: Correction[] = [

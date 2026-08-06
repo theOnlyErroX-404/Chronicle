@@ -53,10 +53,10 @@ describe('GET routes', () => {
   });
 
   it('graph returns the graph once ready', async () => {
-    mockReports.set('r1', baseReport('r1', { graph: { nodes: [], edges: [] } }));
+    mockReports.set('r1', baseReport('r1', { graph: { nodes: [], edges: [], clusters: [] } }));
     const response = await getGraph(get('r1'), { params: Promise.resolve({ id: 'r1' }) });
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ nodes: [], edges: [] });
+    expect(await response.json()).toEqual({ nodes: [], edges: [], clusters: [] });
   });
 
   it('stix returns 409 when the bundle is not ready', async () => {

@@ -25,6 +25,9 @@ export const RelationshipTypeSchema = z.enum([
   'downloads',
   'delivers',
   'exfiltrates',
+  // Derived (non-extracted) edges: co-mention / same-infrastructure links
+  // synthesized deterministically to densify the graph; never fabricated text.
+  'associated-with',
 ]);
 
 // Single source of truth for the allowed values: JSON-schema prompts, the
@@ -82,6 +85,11 @@ export const GraphNodeSchema = z.object({
   type: EntityTypeSchema,
   name: z.string().min(1),
   confidence: z.number().min(0).max(1),
+  // Extraction provenance carried through so the UI can show WHY a node
+  // exists and what else it answers to (previously dropped at buildGraph).
+  // Optional: reports persisted before this field existed must still load.
+  evidence: z.string().max(1_500).optional(),
+  aliases: z.array(z.string().min(1).max(300)).max(10).optional(),
 });
 
 export const GraphEdgeSchema = z.object({
@@ -90,15 +98,33 @@ export const GraphEdgeSchema = z.object({
   target: z.string().min(1),
   type: RelationshipTypeSchema,
   confidence: z.number().min(0).max(1),
+  // Textual basis for the relationship (extracted or the rule that derived it).
+  evidence: z.string().max(1_500).optional(),
+  // true when the edge was synthesized deterministically (co-mention,
+  // shared infrastructure) rather than extracted by the model. Rendered
+  // dashed and toggled separately from faithful extraction edges.
+  derived: z.boolean().default(false),
+});
+
+export const GraphClusterSchema = z.object({
+  id: z.string().min(1),
+  // Name of the hub node (highest degree) that best represents the cluster.
+  label: z.string().min(1),
+  nodeIds: z.array(z.string().min(1)),
 });
 
 export const GraphSchema = z.object({
   nodes: z.array(GraphNodeSchema),
   edges: z.array(GraphEdgeSchema),
+  // Connected components of the graph (union of extracted + derived edges);
+  // singletons are omitted so only meaningful groupings are offered.
+  clusters: z.array(GraphClusterSchema).default([]),
 });
 
 export type Graph = z.infer<typeof GraphSchema>;
 export type GraphNode = z.infer<typeof GraphNodeSchema>;
+export type GraphEdge = z.infer<typeof GraphEdgeSchema>;
+export type GraphCluster = z.infer<typeof GraphClusterSchema>;
 
 export const ReportStatusSchema = z.enum([
   'queued',
