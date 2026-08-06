@@ -121,10 +121,8 @@ export function ReportWorkbench() {
     if (!url.trim() && !file) return setMessage('Choose either a public URL or a PDF.');
     setGraph(null);
     setMessage('Submitting report…');
-try {
-      const auth: Record<string, string> = token
-        ? { Authorization: `Bearer ${token}` }
-        : {};
+    try {
+      const auth: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
       const response = file
         ? await fetch('/api/v1/reports', {
             method: 'POST',
@@ -146,9 +144,7 @@ try {
       if (!response.ok) return setMessage(await apiError(response));
       const created = (await response.json()) as { report_id: string; status: string };
       setJob({ id: created.report_id, status: created.status });
-      setMessage(
-        'Report accepted. Analysis is in progress — the graph appears when it finishes.',
-      );
+      setMessage('Report accepted. Analysis is in progress — the graph appears when it finishes.');
     } catch {
       setMessage('Could not reach the server. Is it running?');
     }
