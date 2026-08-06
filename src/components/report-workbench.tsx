@@ -1,66 +1,14 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
-import cytoscape, { type Core, type ElementDefinition } from 'cytoscape';
+import { FormEvent, useEffect, useState } from 'react';
 import type { Graph } from '@/modules/shared/contracts';
-import { ENTITY_TYPE_COLORS, formatBytes, MAX_REPORT_BYTES } from '@/lib/presentation';
+import { formatBytes, MAX_REPORT_BYTES } from '@/lib/presentation';
+import { GraphViewer } from '@/components/graph-viewer';
+import { ReportPanels } from '@/components/report-panels';
 
 type Job = { id: string; status: string; progress?: string; partial?: boolean; error?: string };
 
 type Session = 'unknown' | 'ok' | 'out';
-
-function GraphViewer({ graph }: { graph: Graph }) {
-  const container = useRef<HTMLDivElement>(null);
-  const cy = useRef<Core | null>(null);
-  useEffect(() => {
-    if (!container.current) return;
-    const elements: ElementDefinition[] = [
-      ...graph.nodes.map((node) => ({
-        data: { id: node.id, label: node.name, color: ENTITY_TYPE_COLORS[node.type] ?? '#94a3b8' },
-      })),
-      ...graph.edges.map((edge) => ({
-        data: { id: edge.id, source: edge.source, target: edge.target, label: edge.type },
-      })),
-    ];
-    cy.current = cytoscape({
-      container: container.current,
-      elements,
-      layout: { name: 'cose', animate: false, padding: 32 },
-      style: [
-        {
-          selector: 'node',
-          style: {
-            'background-color': 'data(color)',
-            label: 'data(label)',
-            color: '#e2e8f0',
-            'font-size': '10px',
-            'text-wrap': 'wrap',
-            'text-max-width': '110px',
-            'text-valign': 'bottom',
-            'text-margin-y': 7,
-            width: '30px',
-            height: '30px',
-          },
-        },
-        {
-          selector: 'edge',
-          style: {
-            width: 1.5,
-            'line-color': '#475569',
-            'target-arrow-color': '#475569',
-            'target-arrow-shape': 'triangle',
-            label: 'data(label)',
-            color: '#94a3b8',
-            'font-size': '9px',
-            'text-rotation': 'autorotate',
-          },
-        },
-      ],
-    });
-    return () => cy.current?.destroy();
-  }, [graph]);
-  return <div className="graph" ref={container} aria-label="Extracted threat knowledge graph" />;
-}
 
 const apiError = async (response: Response) => {
   const payload = await response.json().catch(() => ({}));
@@ -74,6 +22,7 @@ export function ReportWorkbench() {
   const [loginError, setLoginError] = useState('');
   const [session, setSession] = useState<Session>('unknown');
   const [job, setJob] = useState<Job | null>(null);
+  const [reportId, setReportId] = useState<string | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [message, setMessage] = useState(
     'Submit a public threat report URL or PDF to begin analysis.',
@@ -104,6 +53,7 @@ export function ReportWorkbench() {
     await fetch('/api/v1/auth/logout', { method: 'POST' });
     setSession('out');
     setJob(null);
+    setReportId(null);
     setGraph(null);
     setMessage('Signed out.');
   };
@@ -147,6 +97,7 @@ export function ReportWorkbench() {
         );
         const finished = next.status === 'done' || (next.status === 'failed' && next.partial);
         if (finished) {
+          setReportId(next.id);
           const graphResponse = await fetch(`/api/v1/reports/${next.id}/graph`);
           if (graphResponse.ok) setGraph((await graphResponse.json()) as Graph);
         }
@@ -161,6 +112,7 @@ export function ReportWorkbench() {
     event.preventDefault();
     if (!url.trim() && !file) return setMessage('Choose either a public URL or a PDF.');
     setGraph(null);
+    setReportId(null);
     setMessage('Submitting report…');
     try {
       const response = file
@@ -255,15 +207,17 @@ export function ReportWorkbench() {
       <p className="status" role="status">
         {message}
       </p>
-      {graph && (
+      {graph && reportId && (
         <>
           <div className="graph-heading">
             <h2>Extracted knowledge graph</h2>
             <span>
-              {graph.nodes.length} entities · {graph.edges.length} relationships
+              {graph.nodes.length} entities · {graph.edges.length} relationships ·{' '}
+              {graph.clusters.length} clusters
             </span>
           </div>
           <GraphViewer graph={graph} />
+          <ReportPanels reportId={reportId} />
         </>
       )}
     </section>

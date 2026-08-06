@@ -17,7 +17,6 @@ export const ENTITY_TYPE_COLORS: Record<string, string> = {
   email: '#14b8a6',
   'file-path': '#94a3b8',
 };
-
 export const formatBytes = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
   if (bytes < 1024) return `${Math.round(bytes)} B`;
@@ -30,3 +29,5 @@ export const formatBytes = (bytes: number): string => {
   }
   return `${Math.round(value)} TB`;
 };
+
+export const formatPercent = (value: number): string => `${Math.round(value * 100)}%`;

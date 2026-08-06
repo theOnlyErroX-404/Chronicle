@@ -23,8 +23,8 @@ export default function Home() {
         <article>
           <h2>Replaceable model seam</h2>
           <p>
-            Extraction depends on a small LlmClient interface. Phase 1 uses Ollama with qwen2.5:3b
-            and JSON-schema-constrained output.
+            Extraction depends on a small LlmClient interface, currently backed by a local Ollama
+            model with JSON-schema-constrained output.
           </p>
         </article>
         <article>
