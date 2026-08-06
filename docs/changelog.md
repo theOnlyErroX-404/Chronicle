@@ -4,6 +4,30 @@ All notable changes to Chronicle are documented here, newest first. The project
 has no tagged releases yet — sections are anchored to the plan phases in
 `docs/tasks.md`. Version tags are a planned 2-G (deploy) item.
 
+## 2026-08-06 — Graph redesign: provenance, implied edges, vis-network UI (branch feat/graph-frontend)
+
+- **Graph contract enriched (additive)**: `GraphNode` now carries extraction
+  `evidence` + `aliases` (previously dropped at `buildGraph`); `GraphEdge`
+  carries `evidence` + a `derived` flag; `Graph` gains `clusters[]` — connected
+  components named by their hub (highest degree, source-anchoring tiebreak),
+  mirroring Graphify's community naming. Relationship vocabulary gains
+  `associated-with`.
+- **Derived edges for density** (`deriveImpliedEdges`): deterministic,
+  evidence-anchored `associated-with` links — entities co-mentioned in the same
+  relationship evidence, and indicator hostnames under the same registrable
+  domain (compound TLDs handled). Confidence 0.3, always flagged `derived`;
+  the STIX bundle excludes them so exports stay faithful.
+- **UI**: cytoscape swapped for vis-network (Graphify's engine) — cluster-colored
+  nodes (Tableau-style palette), kind-based shapes, size ∝ degree, dashed
+  derived edges, hover highlight. Node inspector shows type/confidence/aliases/
+  evidence + every incident relationship with direction + `inferred` badge.
+  Controls: search, implied-edge toggle, fit.
+- **Panels**: `ReportWorkbench` split into `GraphViewer` + `ReportPanels`
+  (timeline / ATT&CK / STIX-export tabs, lazy fetch from existing endpoints).
+- **Styling**: Sentry-inspired tokens (violet-midnight canvas, lime accent);
+  stale qwen2.5 hero copy removed.
+- 226 tests passing (was 218), coverage 93.62% stmts (was 93.39).
+
 ## 2026-08-06 — Audit fixes (2-I, branch fix/audit-findings)
 
 - **Fixed** AUDIT-01 (High, slowloris): the fetch deadline now survives past the
