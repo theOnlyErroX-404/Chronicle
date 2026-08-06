@@ -11,6 +11,36 @@ const CONFIDENCE_VERIFIED = 0.7;
 
 export const confidenceColor = (value: number): string =>
   value >= CONFIDENCE_VERIFIED ? '#4a8b8c' : '#c4622d';
+
+// Server job statuses (queued/ingesting/extracting/modeling/done/failed) map to
+// analyst-facing stage names for the status screen: pending → extracting →
+// mapping → done. The returned label is shown verbatim under the stepper.
+export const JOB_STAGE_LABELS: Array<{ key: string; label: string }> = [
+  { key: 'pending', label: 'Pending' },
+  { key: 'extracting', label: 'Extracting entities' },
+  { key: 'mapping', label: 'Mapping & graph' },
+  { key: 'done', label: 'Done' },
+];
+
+export const jobStage = (status: string, progress?: string): { stage: string; label: string } => {
+  switch (status) {
+    case 'queued':
+      return { stage: 'pending', label: 'Waiting for a worker' };
+    case 'ingesting':
+      return { stage: 'extracting', label: 'Fetching report text' };
+    case 'extracting':
+      return {
+        stage: 'extracting',
+        label: progress ? `Extracting entities · ${progress}` : 'Extracting entities',
+      };
+    case 'modeling':
+      return { stage: 'mapping', label: 'Building graph and mappings' };
+    case 'done':
+      return { stage: 'done', label: 'Analysis complete' };
+    default:
+      return { stage: 'failed', label: 'Analysis failed' };
+  }
+};
 export const formatBytes = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
   if (bytes < 1024) return `${Math.round(bytes)} B`;

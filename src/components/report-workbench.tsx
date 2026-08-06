@@ -1,8 +1,9 @@
 'use client';
 
 import { FormEvent, useEffect, useState } from 'react';
+import { z } from 'zod';
 import type { Graph } from '@/modules/shared/contracts';
-import { formatBytes, MAX_REPORT_BYTES } from '@/lib/presentation';
+import { formatBytes, JOB_STAGE_LABELS, jobStage, MAX_REPORT_BYTES } from '@/lib/presentation';
 import { GraphViewer } from '@/components/graph-viewer';
 import { ReportPanels } from '@/components/report-panels';
 
@@ -10,23 +11,33 @@ type Job = { id: string; status: string; progress?: string; partial?: boolean; e
 
 type Session = 'unknown' | 'ok' | 'out';
 
+type Submission = { kind: 'url'; url: string } | { kind: 'pdf'; file: File };
+
+const urlSchema = z.url('Provide a valid report URL.');
+
 const apiError = async (response: Response) => {
   const payload = await response.json().catch(() => ({}));
   return payload.detail ?? `Request failed with HTTP ${response.status}.`;
 };
 
 export function ReportWorkbench() {
+  const [mode, setMode] = useState<'url' | 'pdf'>('url');
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [loginToken, setLoginToken] = useState('');
   const [loginError, setLoginError] = useState('');
   const [session, setSession] = useState<Session>('unknown');
   const [job, setJob] = useState<Job | null>(null);
+  const [lastSubmission, setLastSubmission] = useState<Submission | null>(null);
   const [reportId, setReportId] = useState<string | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [message, setMessage] = useState(
     'Submit a public threat report URL or PDF to begin analysis.',
   );
+
+  const active = Boolean(job && !['done', 'failed'].includes(job.status));
+  const activeJob = active && job ? job : null;
+  const activeStage = activeJob ? jobStage(activeJob.status, activeJob.progress) : null;
 
   // The session cookie is HttpOnly (invisible to JS) and SameSite=Strict, so
   // the token never touches the page. Probe the explicit session route: 401
@@ -40,12 +51,12 @@ export function ReportWorkbench() {
     }
   };
   useEffect(() => {
-    let active = true;
+    let active0 = true;
     void probeSession().then((state) => {
-      if (active) setSession(state);
+      if (active0) setSession(state);
     });
     return () => {
-      active = false;
+      active0 = false;
     };
   }, []);
 
@@ -53,6 +64,7 @@ export function ReportWorkbench() {
     await fetch('/api/v1/auth/logout', { method: 'POST' });
     setSession('out');
     setJob(null);
+    setLastSubmission(null);
     setReportId(null);
     setGraph(null);
     setMessage('Signed out.');
@@ -93,10 +105,10 @@ export function ReportWorkbench() {
         setMessage(
           next.status === 'failed'
             ? (next.error ?? 'Analysis failed.')
-            : `Analysis status: ${next.status}${next.progress ? ` · ${next.progress}` : ''}`,
+            : `${jobStage(next.status, next.progress).label} · ${next.status}`,
         );
         const finished = next.status === 'done' || (next.status === 'failed' && next.partial);
-        if (finished) {
+        if (finished && next.id !== reportId) {
           setReportId(next.id);
           const graphResponse = await fetch(`/api/v1/reports/${next.id}/graph`);
           if (graphResponse.ok) setGraph((await graphResponse.json()) as Graph);
@@ -106,36 +118,49 @@ export function ReportWorkbench() {
       }
     }, 1_200);
     return () => window.clearTimeout(timer);
-  }, [job, session]);
+  }, [job, reportId, session]);
+
+  const post = async (submission: Submission): Promise<boolean> => {
+    let response: Response;
+    if (submission.kind === 'url') {
+      response = await fetch('/api/v1/reports', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: submission.url }),
+      });
+    } else {
+      const data = new FormData();
+      data.set('file', submission.file);
+      response = await fetch('/api/v1/reports', { method: 'POST', body: data });
+    }
+    if (response.status === 401) {
+      setSession('out');
+      return false;
+    }
+    if (!response.ok) {
+      setMessage(await apiError(response));
+      return false;
+    }
+    const created = (await response.json()) as { report_id: string; status: string };
+    setLastSubmission(submission);
+    setJob({ id: created.report_id, status: created.status });
+    setReportId(null);
+    setGraph(null);
+    setMessage('Report accepted. Analysis is in progress.');
+    return true;
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!url.trim() && !file) return setMessage('Choose either a public URL or a PDF.');
-    setGraph(null);
-    setReportId(null);
-    setMessage('Submitting report…');
-    try {
-      const response = file
-        ? await fetch('/api/v1/reports', {
-            method: 'POST',
-            body: (() => {
-              const data = new FormData();
-              data.set('file', file);
-              return data;
-            })(),
-          })
-        : await fetch('/api/v1/reports', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ url }),
-          });
-      if (response.status === 401) return setSession('out');
-      if (!response.ok) return setMessage(await apiError(response));
-      const created = (await response.json()) as { report_id: string; status: string };
-      setJob({ id: created.report_id, status: created.status });
-      setMessage('Report accepted. Analysis is in progress — the graph appears when it finishes.');
-    } catch {
-      setMessage('Could not reach the server. Is it running?');
+    if (active) return;
+    if (mode === 'url') {
+      const parsed = urlSchema.safeParse(url.trim());
+      if (!parsed.success) return setMessage(parsed.error.issues[0]?.message ?? 'Invalid URL.');
+      await post({ kind: 'url', url: parsed.data });
+    } else if (file) {
+      await post({ kind: 'pdf', file });
+    } else {
+      setMessage('Choose a PDF file to analyze.');
     }
   };
 
@@ -174,35 +199,95 @@ export function ReportWorkbench() {
 
   return (
     <section className="workbench">
+      {activeJob && activeStage && (
+        <div className="job-status" role="status" aria-live="polite">
+          <ol className="job-stages" aria-label="Analysis progress">
+            {JOB_STAGE_LABELS.map((stage) => {
+              const currentIndex = JOB_STAGE_LABELS.findIndex((item) => item.key === stage.key);
+              const jobIndex = JOB_STAGE_LABELS.findIndex((item) => item.key === activeStage.stage);
+              const state =
+                jobIndex === -1
+                  ? 'pass'
+                  : currentIndex < jobIndex
+                    ? 'pass'
+                    : currentIndex === jobIndex
+                      ? 'current'
+                      : 'todo';
+              return (
+                <li key={stage.key} className={state}>
+                  <span className="job-dot" aria-hidden="true" />
+                  <span className="job-stage-label">{stage.label}</span>
+                </li>
+              );
+            })}
+          </ol>
+          <p className="status">{activeStage.label}</p>
+        </div>
+      )}
       <form onSubmit={submit} className="submission-form">
-        <label htmlFor="report-url">Public report URL</label>
-        <input
-          id="report-url"
-          value={url}
-          onChange={(event) => {
-            setUrl(event.target.value);
-            setFile(null);
-          }}
-          placeholder="https://security.vendor.com/research/report"
-          type="url"
-        />
-        <span className="or">or</span>
-        <label htmlFor="report-file">Threat report PDF (max {formatBytes(MAX_REPORT_BYTES)})</label>
-        <input
-          id="report-file"
-          type="file"
-          accept="application/pdf,.pdf"
-          onChange={(event) => {
-            setFile(event.target.files?.[0] ?? null);
-            setUrl('');
-          }}
-        />
-        <button type="submit" disabled={Boolean(job && !['done', 'failed'].includes(job.status))}>
-          Analyze report
-        </button>
-        <button type="button" className="sign-out" onClick={logout}>
-          Sign out
-        </button>
+        <div className="source-toggle" role="group" aria-label="Report source">
+          <button
+            type="button"
+            className={`toolbar-toggle${mode === 'url' ? ' active' : ''}`}
+            aria-pressed={mode === 'url'}
+            onClick={() => setMode('url')}
+          >
+            Public URL
+          </button>
+          <button
+            type="button"
+            className={`toolbar-toggle${mode === 'pdf' ? ' active' : ''}`}
+            aria-pressed={mode === 'pdf'}
+            onClick={() => setMode('pdf')}
+          >
+            PDF file
+          </button>
+        </div>
+        {mode === 'url' ? (
+          <label htmlFor="report-url">
+            Public report URL
+            <input
+              id="report-url"
+              value={url}
+              onChange={(event) => {
+                setUrl(event.target.value);
+                setFile(null);
+              }}
+              placeholder="https://security.vendor.com/research/report"
+              type="url"
+            />
+          </label>
+        ) : (
+          <label htmlFor="report-file">
+            Threat report PDF (max {formatBytes(MAX_REPORT_BYTES)})
+            <input
+              id="report-file"
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={(event) => {
+                setFile(event.target.files?.[0] ?? null);
+                setUrl('');
+              }}
+            />
+          </label>
+        )}
+        <div className="form-actions">
+          <button type="submit" disabled={active}>
+            Analyze report
+          </button>
+          {job?.status === 'failed' && lastSubmission ? (
+            <button
+              type="button"
+              className="toolbar-toggle retry"
+              onClick={() => void post(lastSubmission)}
+            >
+              Retry
+            </button>
+          ) : null}
+          <button type="button" className="sign-out" onClick={logout}>
+            Sign out
+          </button>
+        </div>
       </form>
       <p className="status" role="status">
         {message}
