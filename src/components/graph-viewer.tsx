@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataSet, Network } from 'vis-network/standalone';
 import type { Graph, GraphCluster, GraphNode } from '@/modules/shared/contracts';
+import { confidenceColor } from '@/lib/presentation';
 
-// Cluster colors follow a Tableau-style categorical palette (the palette
-// Graphify derives communities with), so each connected component reads as one
-// hue across the canvas. Surplus / singleton nodes fall back to a muted tone.
+// Ring colors follow a Tableau-style categorical palette (the palette Graphify
+// derives communities with), so each connected component reads as one ring hue
+// across the canvas. Surplus / singleton nodes fall back to a muted ring. The
+// node FILL carries confidence (teal = verified, rust = needs review).
 const CLUSTER_PALETTE = [
   '#e15759',
   '#f28e2b',
@@ -20,7 +22,7 @@ const CLUSTER_PALETTE = [
 ];
 
 // Node shape by entity kind: actor / tooling / infrastructure / context read
-// as distinct silhouettes regardless of the cluster color they carry.
+// as distinct silhouettes regardless of the confidence fill they carry.
 const SHAPE_BY_TYPE: Record<string, string> = {
   'threat-actor': 'diamond',
   campaign: 'diamond',
@@ -35,24 +37,25 @@ const SHAPE_BY_TYPE: Record<string, string> = {
   country: 'square',
 };
 
-const NODE_MUTED = '#6b6480';
-const EDGE_COLOR = '#4b4563';
-const DERIVED_COLOR = '#9c755f';
+const RING_MUTED = '#3a3f47';
+const EDGE_COLOR = '#3a3f47';
+const DERIVED_COLOR = '#c4622d';
+const NODE_LABEL = '#e8e6e0';
+const EDGE_LABEL = '#8b909a';
 
-const clusterColorFor = (clusters: GraphCluster[], nodeId: string) => {
+const clusterRingFor = (clusters: GraphCluster[], nodeId: string) => {
   const index = clusters.findIndex((cluster) => cluster.nodeIds.includes(nodeId));
-  return index === -1 ? NODE_MUTED : CLUSTER_PALETTE[index % CLUSTER_PALETTE.length];
+  return index === -1 ? RING_MUTED : CLUSTER_PALETTE[index % CLUSTER_PALETTE.length];
 };
 
 type GraphNodeItem = {
   id: string;
   label: string;
-  color: string;
+  color: { background: string; border: string };
   shape: string;
   size: number;
   font: { color: string; face: string; size: number };
   borderWidth: number;
-  borderColor: string;
   hidden: boolean;
 };
 
@@ -113,16 +116,17 @@ export function GraphViewer({
     }
     const nodes: DataSet<GraphNodeItem> = new DataSet(
       graph.nodes.map((node) => {
-        const color = clusterColorFor(graph.clusters, node.id);
         return {
           id: node.id,
           label: renames?.get(node.id) ?? node.name,
-          color,
+          color: {
+            background: confidenceColor(node.confidence),
+            border: clusterRingFor(graph.clusters, node.id),
+          },
           shape: SHAPE_BY_TYPE[node.type] ?? 'dot',
           size: 12 + Math.min(24, Math.sqrt(degree.get(node.id) ?? 0) * 5),
-          font: { color: '#e8e6f1', face: 'Arial', size: 12 },
-          borderWidth: 1,
-          borderColor: '#150f23',
+          font: { color: NODE_LABEL, face: 'Arial', size: 12 },
+          borderWidth: 2,
           hidden: hiddenNodes?.has(node.id) ?? false,
         };
       }),
@@ -139,7 +143,7 @@ export function GraphViewer({
             color: edge.derived ? DERIVED_COLOR : EDGE_COLOR,
             highlight: edge.derived ? DERIVED_COLOR : EDGE_COLOR,
           },
-          font: { color: '#9a97aa', face: 'Arial', size: 9 },
+          font: { color: EDGE_LABEL, face: 'Arial', size: 9 },
           hidden:
             (hiddenEdges?.has(edge.id) ?? false) ||
             (hiddenNodes?.has(edge.source) ?? false) ||
@@ -233,12 +237,27 @@ export function GraphViewer({
         </button>
       </div>
       <div className="graph" ref={container} aria-label="Extracted threat knowledge graph" />
-      <div className="legend" aria-label="Cluster legend">
+      <div className="legend" aria-label="Graph legend">
+        <span className="legend-item">
+          <span
+            className="legend-swatch"
+            style={{ background: '#4a8b8c', border: '2px solid #3a3f47' }}
+          />
+          verified (≥ 70%)
+        </span>
+        <span className="legend-item">
+          <span
+            className="legend-swatch"
+            style={{ background: '#c4622d', border: '2px solid #3a3f47' }}
+          />
+          needs review
+        </span>
+        <span className="legend-sep" aria-hidden="true" />
         {graph.clusters.map((cluster, index) => (
           <span className="legend-item" key={cluster.id}>
             <span
-              className="legend-swatch"
-              style={{ background: CLUSTER_PALETTE[index % CLUSTER_PALETTE.length] }}
+              className="legend-ring"
+              style={{ borderColor: CLUSTER_PALETTE[index % CLUSTER_PALETTE.length] }}
             />
             {cluster.label}
           </span>

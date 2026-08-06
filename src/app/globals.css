@@ -248,6 +248,18 @@ button.sign-out {
   border-radius: 50%;
   display: inline-block;
 }
+.legend-ring {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid;
+  display: inline-block;
+}
+.legend-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--line);
+}
 .graph-layout {
   margin-top: 12px;
 }
