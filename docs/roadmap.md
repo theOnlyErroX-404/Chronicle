@@ -6,8 +6,9 @@ updated as work happens. This page is the stable forward view.
 
 ## Current phase
 
-**2-G (deployment)** — docker-compose stack (app + worker + postgres + redis), GHCR
-pull, UI auth (HttpOnly cookie session). Merged `cd50532` (2026-08-06).
+**2-G (deployment) — done** (merged `cd50532`, 2026-08-06): docker-compose stack
+(app + worker + postgres + redis), GHCR pull, HttpOnly cookie session auth.
+Next: **2-C (Neo4j graph persistence)**.
 
 ## Next (in order, each on its own branch)
 
@@ -22,7 +23,7 @@ pull, UI auth (HttpOnly cookie session). Merged `cd50532` (2026-08-06).
 
 - 2-E-D workbench timeline UI panel (mirrors 2-F, pending user spec).
 - Deterministic IOC pre-extraction.
-- Frontend redesign (three design docs in [`docs/designs/`](designs/)).
+- Frontend redesign (four design docs in [`docs/designs/`](designs/)).
 
 ## Later / not planned
 

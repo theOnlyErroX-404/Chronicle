@@ -6,6 +6,13 @@
 **Status:** Pre-development blueprint, v1.1 (Node/Next.js + self-hosted Ollama stack)
 **Related:** Designed to operate standalone, with a defined path to becoming a DeltaTI ingestion module
 
+> **v1.2 addendum (2026-08-06):** the blueprint's repeated `qwen2.5:3b` references are
+> historical. Extraction now defaults to **`nemotron-mini:latest`** (measured 2026-08-06 —
+> qwen2.5:3b missed all malware/IOCs on the APT41 benchmark; nemotron extracted them).
+> The `LlmClient` seam predicted by this blueprint absorbed the swap without redesign.
+> Living config/facts live in [`docs/tasks.md`](../tasks.md) and `.env`; the
+> model-swap reasoning in §2/§4/§6 still applies.
+
 ---
 
 ## A note on scale, before anything else

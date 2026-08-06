@@ -2,7 +2,77 @@
 
 All notable changes to Chronicle are documented here, newest first. The project
 has no tagged releases yet — sections are anchored to the plan phases in
-`PLAN.md`. Version tags are a planned 2-G (deploy) item.
+`docs/tasks.md`. Version tags are a planned 2-G (deploy) item.
+
+## 2026-08-06 — Docs restructure (repo organization)
+
+- **Moved** root docs into `docs/`: `Chronicle-architecture.md` →
+  `docs/architecture/architecture.md`, `CHANGELOG.md` → `docs/changelog.md`,
+  `SECURITY-AUDIT-2026-08-05.md` → `docs/security/security-audit.md`,
+  `CODEFINDINGS.md` → `docs/security/code-findings.md`, `PLAN.md` →
+  `docs/tasks.md`, `Designs/` → `docs/designs/`.
+- **Added** `docs/roadmap.md` (stable forward view), `docs/decisions/README.md`
+  (index — single copy per decision, no duplication), `docs/tooling/README.md`
+  (toolchain matrix: Ponytail used, Understand available, Graphify rejected —
+  npm's `graphify` is a random-graph generator, not a codebase analyzer).
+- **Consolidated** scripts: `src/scripts/{attck-refresh,postman-sync}.ts` →
+  `scripts/` (all project scripts in one place; package.json + `corpus.ts`
+  references updated).
+- **Fixed** stale links (README, `bearer.yml`, `.dependency-cruiser.cjs`
+  `src/scripts/` → `scripts/`), `.gitignore`/`.dockerignore` paths.
+- **Reverted** `next-env.d.ts` build-noise churn.
+- Verified: typecheck / lint / prettier / 197 tests / deps:check / worker boots /
+  compose YAML valid. No behavior change.
+
+## 2026-08-06 — Phase 2-G: deployment stack + cookie session auth (merged `cd50532`)
+
+- **Added** `POST /api/v1/auth/login` (sets HttpOnly `chronicle_session` cookie,
+  `SameSite=Strict`, `Max-Age=30d`, `Secure` in production) and `POST
+  /api/v1/auth/logout` (clears it). `requireApiToken` accepts the `Authorization`
+  header or the session cookie (constant-time, shared `verifyApiToken`) — the
+  existing 8 API routes are unchanged.
+- **Added** workbench login gate (`src/components/report-workbench.tsx`
+  rewritten): token no longer touches the browser — **closes CodeQL alert #3
+  `js/clear-text-storage-of-sensitive-data`** (localStorage token removed).
+  Session probe rides the existing `GET /api/v1/reports/{id}` route (401 without
+  cookie, 404 with).
+- **Added** `docker-compose.yml`: app + worker + postgres 17 + redis 7, pulling
+  `ghcr.io/theonlyerrox-404/chronicle:main` (`pull_policy: always`), Ollama
+  reached via `host.docker.internal:host-gateway` (host systemd service, models
+  already pulled).
+- **Added** `build:worker`: bundles `worker.ts` with esbuild into
+  `.next/standalone/worker.cjs` — the standalone trace does not include ioredis
+  and the runner image has no npm/tsx, so the worker needs the self-contained
+  bundle. esbuild added as a direct devDependency (`0.28.1`).
+- **Verified** live: no cookie → 401, bad token → 401, good token → 204 +
+  cookie, cookie probe → 404 (ok), logout → 204, post-logout → 401, legacy
+  Bearer header still works.
+
+## 2026-08-06 — Extraction quality pass (model benchmark + breaker resilience)
+
+- **Benchmarked** local models on the same APT41 chunk (2,100 chars, production
+  schema, temp 0, seed 1337): `qwen2.5:3b` ~160s/chunk but extracted zero
+  malware/IOCs (actors/sectors/countries only); `nemotron-mini:latest` ~2.4
+  tok/s, extracted all malware + web-shells (ANTSWORD, BLUEBEAM, DUSTPAN,
+  BEACON, DUSTTRAP, SQLULDR2, PINEGROVE, OneDrive); `qwen3-vl:4b` 2,120s and
+  invalid JSON — rejected.
+- **Switched default model**: `.env` → `OLLAMA_CHAT_MODEL=nemotron-mini:latest`,
+  `LLM_TIMEOUT_MS=600000` (old 180s would kill every nemotron chunk);
+  `EXTRACTION_MAX_CHUNK_CHARS=2100` retained.
+- **APT41 end-to-end** (PDF multipart; loopback URLs are blocked by the SSRF
+  guard): report done, 11 chunks, 1 flaky chunk skipped without aborting,
+  **19 entities / 11 relationships**, stats recorded. Previous run under the
+  old code failed 4/11 with 0 edges.
+- **Fixed** breaker fail-fast (merged `4541770`, PR #21): `withRetry` no longer
+  throws while the breaker is open — it waits out the cooldown
+  (`while (breaker?.isOpen()) sleep(25)`) so one flaky chunk can't abort the
+  remaining chunks. Tests rewritten to the new contract.
+- **CI green-fix** (merged `18a952c`, PR #20): prettier-formatted
+  `scripts/serve.mjs`, `report-workbench.tsx`, postman collection (the `Check
+  formatting` failure in 4 pushed commits); bumped all three `codeql-action`
+  steps to v4.37.3 (same pinned SHA). All 4 dependabot PRs (#16 TS7 wall,
+  #17/#18/#19 superseded) closed with rationale. Main CI fully green; **all
+  CodeQL alerts closed** (0 open).
 
 ## 2026-08-05 — Web connection fixes + auth token rotation
 

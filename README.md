@@ -36,7 +36,7 @@ candidates.
 
 ## LLM backends
 
-- **Local Ollama** (default: `qwen2.5:3b`) — runs CPU-only on modest hardware.
+- **Local Ollama** (default: `nemotron-mini:latest`) — runs CPU-only on modest hardware.
 - **Any OpenAI-compatible endpoint** (OpenRouter, Google Gemini, Groq) — set
   `LLM_PROVIDER=openai`.
 - **Automatic failover across endpoints** — endpoints are tried in order. When one
@@ -49,8 +49,9 @@ candidates.
 ## Run locally
 
 1. Copy `.env.example` to `.env` and adjust values.
-2. Start Ollama and pull the default model: `ollama pull qwen2.5:3b` (or set
-   `LLM_PROVIDER=openai` with your hosted endpoints — see `.env.example`).
+2. Start Ollama and pull the default model: `ollama pull nemotron-mini:latest` (or
+   `qwen2.5:3b` for a faster, lower-quality fallback) — or set `LLM_PROVIDER=openai`
+   with your hosted endpoints (see `.env.example`).
 3. Optional but recommended (Phase 2 persistence): run Postgres + Redis containers:
    `docker run -d --name chronicle-postgres -e POSTGRES_USER=chronicle -e POSTGRES_PASSWORD=chronicle -e POSTGRES_DB=chronicle -p 127.0.0.1:5432:5432 postgres:17-alpine` and
    `docker run -d --name chronicle-redis -p 127.0.0.1:6379:6379 redis:7-alpine`; then set
@@ -65,15 +66,16 @@ candidates.
 
 For a deployed environment, set `CHRONICLE_API_TOKEN` (a random string — e.g.
 `openssl rand -base64 48 | tr '+/' '-_'`) and send
-`Authorization: Bearer <token>` to the API. The local UI permits unauthenticated
-development only when `NODE_ENV` is not production.
+`Authorization: Bearer <token>` to the API — or sign in through the workbench,
+which sets an HttpOnly `chronicle_session` cookie (`POST /api/v1/auth/login`;
+`POST /api/v1/auth/logout` clears it). The API accepts the header or the cookie.
 
 ## Configuration (`src/lib/config.ts`)
 
 | Env | Default | Meaning |
 |---|---|---|
 | `LLM_PROVIDER` | `ollama` | `ollama` or `openai` |
-| `OLLAMA_BASE_URL` / `OLLAMA_CHAT_MODEL` | `http://127.0.0.1:11434` / `qwen2.5:3b` | Local model endpoint |
+| `OLLAMA_BASE_URL` / `OLLAMA_CHAT_MODEL` | `http://127.0.0.1:11434` / `nemotron-mini:latest` | Local model endpoint |
 | `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `OPENAI_CHAT_MODEL` | — | Primary hosted endpoint (OpenRouter / Gemini / Groq) |
 | `OPENAI_BASE_URL_2` … `_9` (+ key/model) | — | Failover endpoints, tried in order |
 | `OPENAI_MAX_TOKENS` (+ `_N`) | `8192` | Completion budget for hosted endpoints; free models over-extract and truncate mid-JSON below this |
@@ -98,7 +100,7 @@ software, campaigns) matched explicitly from the report text. All endpoints requ
 ## Quality
 
 - `npm test` (vitest), `npm run typecheck`, `npm run lint`, `npm run prettier:check`,
-  `npm run deps:check` — all green (185 tests with a local Postgres/Redis; 176 surface
+  `npm run deps:check` — all green (197 tests passed / 200 total, 3 env-gated locally; 197 surface
   in CI, where live Postgres/Redis integration tests run against service containers).
 - **Golden-set eval** (entity vs relationship scored separately, per the architecture
   blueprint's quality gate): `npm run eval:golden`. Reports the active model/endpoints.
@@ -127,18 +129,18 @@ tag in `scripts/attck-refresh.ts`). Data is MITRE ATT&CK®, distributed under th
 ## Status vs the blueprint
 
 **Phase 1 (MVP) — complete:** URL/PDF ingestion, LLM entity + relationship extraction
-(via the `LlmClient` seam, Ollama `qwen2.5:3b` or any OpenAI-compatible endpoint),
+(via the `LlmClient` seam, Ollama `nemotron-mini:latest` or any OpenAI-compatible endpoint),
 STIX 2.1-lite export, interactive Cytoscape graph, golden-set eval harness, SSRF
 pinning, Zod at the boundary.
 
 **Phase 2 — core complete, backlog deferred:** Postgres (Prisma) persistence (2-A),
-Redis + BullMQ durable queue (2-B), human-feedback endpoint (2-F), bearer-token auth,
-CI integration tests against ephemeral Postgres/Redis.
+Redis + BullMQ durable queue (2-B), human-feedback endpoint (2-F), offline ATT&CK
+mapping (2-D), deterministic timeline (2-E), docker-compose deployment + HttpOnly
+cookie session auth (2-G), CI integration tests against ephemeral Postgres/Redis.
 
-Deferred (tracked in docs/tasks.md): 2-C Neo4j, 2-D ATT&CK mapping, 2-E timeline, 2-G
-docker-compose + staging deployment, 2-H ClamAV, OpenTelemetry (YAGNI until metrics
-are needed). Backlog: PDF object storage, Redis-backed LLM cache, DR backups,
-structured JSON logging.
+Deferred (tracked in docs/tasks.md): 2-C Neo4j, 2-H ClamAV, OpenTelemetry (YAGNI
+until metrics are needed). Backlog: PDF object storage, Redis-backed LLM cache,
+DR backups, structured JSON logging.
 
 ## License
 
