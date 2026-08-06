@@ -4,19 +4,13 @@
 
 export const MAX_REPORT_BYTES = 10 * 1024 * 1024;
 
-export const ENTITY_TYPE_COLORS: Record<string, string> = {
-  'threat-actor': '#ef4444',
-  malware: '#f97316',
-  tool: '#eab308',
-  'web-shell': '#84cc16',
-  vulnerability: '#a855f7',
-  indicator: '#06b6d4',
-  sector: '#22c55e',
-  country: '#3b82f6',
-  campaign: '#ec4899',
-  email: '#14b8a6',
-  'file-path': '#94a3b8',
-};
+// Confidence drives the semantic dual accent: verified (teal) vs needs-review
+// (rust). The percentage is ALWAYS shown next to the color, never the color
+// alone. Mirrors --teal / --rust in globals.css for the canvas renderer.
+const CONFIDENCE_VERIFIED = 0.7;
+
+export const confidenceColor = (value: number): string =>
+  value >= CONFIDENCE_VERIFIED ? '#4a8b8c' : '#c4622d';
 export const formatBytes = (bytes: number): string => {
   if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
   if (bytes < 1024) return `${Math.round(bytes)} B`;

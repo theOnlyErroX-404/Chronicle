@@ -1,14 +1,17 @@
 :root {
   color-scheme: dark;
-  --ink: #e8e6f1;
-  --muted: #9a97aa;
-  --line: #322d45;
-  --surface: #1f1633;
-  --panel: #2a1f45;
-  --canvas: #150f23;
-  --accent: #c2ef4e;
-  --on-accent: #150f23;
-  --node-muted: #6b6480;
+  /* Graphite workbench surface (ThreatGraph palette) */
+  --canvas: #1b1e22;
+  --surface: #252932;
+  --panel: #252932;
+  --line: #3a3f47;
+  --ink: #e8e6e0;
+  --muted: #8b909a;
+  /* Semantic dual accent: teal = verified (high confidence), rust = needs review. */
+  --teal: #4a8b8c;
+  --rust: #c4622d;
+  --accent: var(--teal);
+  --well: #171a1e;
 }
 * {
   box-sizing: border-box;
@@ -16,9 +19,12 @@
 body {
   margin: 0;
   min-width: 320px;
-  background: radial-gradient(circle at 12% 0%, #3c2a63 0, transparent 34rem), #150f23;
+  background: var(--canvas);
   color: var(--ink);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Inter, system-ui, sans-serif;
+}
+.mono {
+  font-family: var(--font-mono), monospace;
 }
 main {
   max-width: 1160px;
@@ -35,9 +41,10 @@ main {
 h1 {
   margin: 14px 0 10px;
   max-width: 14ch;
+  font-family: var(--font-display), Fraunces, serif;
   font-size: clamp(2rem, 5vw, 3.4rem);
   line-height: 1.05;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.02em;
 }
 .lead {
   max-width: 64ch;
@@ -64,10 +71,10 @@ label {
 }
 input {
   width: 100%;
-  border: 1px solid #4b4563;
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
-  background: #0f0a1c;
+  background: var(--well);
   color: var(--ink);
   font: inherit;
 }
@@ -101,12 +108,12 @@ button:disabled {
 button.sign-out {
   background: transparent;
   color: var(--muted);
-  border: 1px solid #4b4563;
+  border: 1px solid var(--line);
   margin-left: 8px;
 }
 .sign-out:hover {
   color: var(--ink);
-  border-color: #6d6786;
+  border-color: var(--muted);
 }
 .status {
   min-height: 1.5rem;
@@ -147,7 +154,7 @@ button.sign-out {
   margin-top: 0;
   background: transparent;
   color: var(--muted);
-  border: 1px solid #4b4563;
+  border: 1px solid var(--line);
   font-weight: 600;
   font-size: 0.85rem;
 }
@@ -225,7 +232,7 @@ button.sign-out {
   margin: 10px 0;
   padding: 10px;
   border-left: 3px solid var(--accent);
-  background: #0f0a1c;
+  background: var(--well);
   color: #cfcadd;
   font-size: 0.82rem;
 }
@@ -248,7 +255,7 @@ button.sign-out {
   font-weight: 700;
 }
 .inspector .badge {
-  border: 1px solid #6d6786;
+  border: 1px solid var(--muted);
   border-radius: 4px;
   padding: 1px 5px;
   font-size: 0.68rem;
@@ -276,7 +283,7 @@ button.sign-out {
 }
 .tab.active {
   color: var(--ink);
-  border-color: #6d6786;
+  border-color: var(--muted);
 }
 .tab-panel {
   margin-top: 10px;
@@ -292,7 +299,7 @@ button.sign-out {
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #0f0a1c;
+  background: var(--well);
   font-size: 0.85rem;
 }
 .panel-list .muted {
