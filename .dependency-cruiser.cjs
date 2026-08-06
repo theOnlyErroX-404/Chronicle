@@ -1,4 +1,4 @@
-// Module-boundary enforcement for the modular monolith (see Chronicle-architecture.md §2).
+// Module-boundary enforcement for the modular monolith (see docs/architecture/architecture.md §2).
 //
 // Business contexts (extraction, ingestion, knowledge-modeling, processing)
 // expose a public `index.ts`; every other context must import them through it,
@@ -54,7 +54,7 @@ module.exports = {
       name: 'no-attck-internals',
       severity: 'error',
       comment: 'Import attck through its index.ts, not internal files.',
-      from: { pathNot: '^src/modules/attck/|^src/tests/|^src/scripts/' },
+      from: { pathNot: '^src/modules/attck/|^src/tests/|^scripts/' },
       to: { path: '^src/modules/attck/', pathNot: '^src/modules/attck/index\\.ts$' },
     },
     {

@@ -2,7 +2,7 @@
 
 AI-driven CTI tool that turns threat reports (PDF uploads / public blog URLs) into
 interactive knowledge graphs and STIX 2.1-lite bundles. A Next.js modular monolith
-implementing the first phases of [`Chronicle-architecture.md`](Chronicle-architecture.md).
+implementing the first phases of [`docs/architecture/architecture.md`](docs/architecture/architecture.md).
 
 ## How it works
 
@@ -110,7 +110,7 @@ software, campaigns) matched explicitly from the report text. All endpoints requ
 The offline ATT&CK corpus in `src/modules/attck/data/enterprise-attck.json` is derived
 from MITRE's official ATT&CK STIX bundle:
 `npm run attck:refresh` re-derives it when a new ATT&CK release ships (bump the pinned
-tag in `src/scripts/attck-refresh.ts`). Data is MITRE ATT&CK®, distributed under the
+tag in `scripts/attck-refresh.ts`). Data is MITRE ATT&CK®, distributed under the
 [Apache License 2.0](https://github.com/mitre-attack/attack-stix-data); attribution per
 [ATT&CK Usage Terms](https://attack.mitre.org/resources/terms-of-use/).
 
@@ -135,7 +135,7 @@ pinning, Zod at the boundary.
 Redis + BullMQ durable queue (2-B), human-feedback endpoint (2-F), bearer-token auth,
 CI integration tests against ephemeral Postgres/Redis.
 
-Deferred (tracked in PLAN.md): 2-C Neo4j, 2-D ATT&CK mapping, 2-E timeline, 2-G
+Deferred (tracked in docs/tasks.md): 2-C Neo4j, 2-D ATT&CK mapping, 2-E timeline, 2-G
 docker-compose + staging deployment, 2-H ClamAV, OpenTelemetry (YAGNI until metrics
 are needed). Backlog: PDF object storage, Redis-backed LLM cache, DR backups,
 structured JSON logging.

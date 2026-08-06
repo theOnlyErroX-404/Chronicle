@@ -95,7 +95,7 @@ Desktop.ini
 # ---------------------------------------------------------------------------
 
 # Working memory / plans (internal, not source of truth)
-PLAN.md
+docs/tasks.md
 
 # ---------------------------------------------------------------------------
 # Agent / tooling config (local-only; not part of the product)
@@ -104,6 +104,6 @@ PLAN.md
 .opencode/
 opencode.json
 vibeguard.config.json
-SECURITY-AUDIT-2026-08-05.md
-CODEFINDINGS.md
-Designs/
+docs/security/security-audit.md
+docs/security/code-findings.md
+docs/designs/

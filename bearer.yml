@@ -1,4 +1,4 @@
-# Accepted findings (see SECURITY-AUDIT-2026-08-05.md, BEARER-01/BEARER-04):
+# Accepted findings (see docs/security/security-audit.md, BEARER-01/BEARER-04):
 # - javascript_lang_logger_leak: all error objects are already logged as
 #   `.message`-only (fix #4); remaining hits are status/count/CLI-progress logs
 #   with no PII, tokens, or report content.

@@ -3,7 +3,8 @@
 .next
 node_modules
 coverage
-PLAN.md
+docs/tasks.md
+docs/security/
 README.md
 .env
 .env.*.local

@@ -1,7 +1,7 @@
 import corpus from './data/enterprise-attck.json';
 
 // Compact, offline MITRE ATT&CK Enterprise corpus, derived from the official
-// STIX bundle by `npm run attck:refresh` (see src/scripts/attck-refresh.ts).
+// STIX bundle by `npm run attck:refresh` (see scripts/attck-refresh.ts).
 // Objects come in four kinds: techniques (T####), groups (G####), software
 // (S####), and campaigns (C####). Groups/software/campaigns are matched by
 // name or alias; techniques by id or name.
