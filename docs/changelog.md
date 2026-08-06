@@ -4,6 +4,38 @@ All notable changes to Chronicle are documented here, newest first. The project
 has no tagged releases yet — sections are anchored to the plan phases in
 `docs/tasks.md`. Version tags are a planned 2-G (deploy) item.
 
+## 2026-08-06 — ThreatGraph frontend redesign (branch feat/graph-redesign)
+
+The workbench is re-skinned to a graphite CTI-analyst surface per the new
+design brief, with the report review loop brought into the UI.
+
+- **Theme + type system**: Sentry-style violet/lime replaced by the ThreatGraph
+  palette (`#1b1e22` canvas, `#252932` panel, `#e8e6e0` ink) with a semantic
+  dual accent — teal `#4a8b8c` = verified, rust `#c4622d` = needs review.
+  Radial gradient removed (no decorative gradients). Three typefaces via
+  `next/font`: Fraunces (display), Inter (UI), JetBrains Mono (every data
+  literal). Plain CSS variables kept (no Tailwind).
+- **Confidence-first graph**: node fill now encodes confidence (teal ≥ 0.7,
+  rust below) with cluster identity moved to a thin ring/border; shapes and
+  degree sizing unchanged. Derived edges render rust and dashed. Legend splits
+  into confidence + cluster-ring groups. `confidenceColor` + `graphRelations`
+  live in `lib/presentation` (single source, unit tested).
+- **Submit + job status screens** (prompt compliance): folder-tab view router
+  `Graph / Timeline / ATT&CK / Export`; shared right-hand inspector across all
+  three analysis tabs; TLP:CLEAR chip on the report header; landing page
+  stripped of the marketing hero + principle cards.
+- **Job-stage status**: `queued/ingesting/extracting/modeling/done/failed`
+  surfaced as `pending → extracting → mapping → done` stepper with the chunk
+  progress string; failed jobs show the error and a **Retry** button that
+  re-posts the last submission. Client-side zod validation of report URLs.
+- **Analyst review in the UI**: the inspector posts accept/reject/correct through
+  the existing `POST /api/v1/reports/{id}/feedback` route and applies the review
+  optimistically — rejected nodes/edges disappear from the canvas, corrected
+  names relabel the node, no refresh. Timeline events are read-only (not a
+  feedback target server-side).
+- Gates: 238 passing (was 228), coverage 93.71% stmts / 82.06% branch; build,
+  eslint, prettier, deps:check (95 modules) green.
+
 ## 2026-08-06 — Ingestion resilience: transient fetch retry (branch feat/graph-frontend)
 
 - URL ingestion now retries transient network failures (connection reset, TLS

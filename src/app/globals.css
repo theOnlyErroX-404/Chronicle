@@ -110,7 +110,9 @@ li.current .job-dot {
   background: var(--teal);
 }
 li.current .job-dot {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--teal) 25%, transparent);
+  box-shadow:
+    0 0 0 2px var(--canvas),
+    0 0 0 3px var(--teal);
 }
 .form-actions {
   display: flex;
