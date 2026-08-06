@@ -185,7 +185,7 @@ export function GraphViewer({
       onSelect?.(nodesById.get(id) ?? null);
     });
     return () => instance.destroy();
-  }, [graph, nodesById, onSelect]);
+  }, [graph, nodesById, onSelect, hiddenNodes, hiddenEdges, renames]);
 
   // Search + derived-toggle ride the DataSets directly: hiding nodes/edges is
   // cheaper than rebuilding the Network, and physics state survives the filter.
