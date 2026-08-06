@@ -2,6 +2,8 @@
 // literal (a color, a size limit, a type label) is defined once and shared by
 // the server default and the client component instead of being hardcoded twice.
 
+import type { AttckMapping, Graph, GraphNode, TimelineEvent } from '@/modules/shared/contracts';
+
 export const MAX_REPORT_BYTES = 10 * 1024 * 1024;
 
 // Confidence drives the semantic dual accent: verified (teal) vs needs-review
@@ -55,3 +57,40 @@ export const formatBytes = (bytes: number): string => {
 };
 
 export const formatPercent = (value: number): string => `${Math.round(value * 100)}%`;
+
+// What the shared inspector shows for a tapped item. One discriminated union so
+// the workbench owns selection and the inspector renders whatever kind it gets.
+export type Selection =
+  | { kind: 'node'; node: GraphNode }
+  | { kind: 'timeline'; event: TimelineEvent }
+  | { kind: 'attck'; mapping: AttckMapping };
+
+export type GraphRelation = {
+  edgeId: string;
+  edgeType: string;
+  derived: boolean;
+  neighbor: GraphNode;
+  outgoing: boolean;
+};
+
+// Ignores edges whose other endpoint is missing from the graph (never happens
+// with buildGraph output, but a bad graph should not crash the inspector).
+export const graphRelations = (graph: Graph, nodeId: string): GraphRelation[] => {
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const relations: GraphRelation[] = [];
+  for (const edge of graph.edges) {
+    if (edge.source !== nodeId && edge.target !== nodeId) continue;
+    const neighborId = edge.source === nodeId ? edge.target : edge.source;
+    const neighbor = byId.get(neighborId);
+    if (neighbor) {
+      relations.push({
+        edgeId: edge.id,
+        edgeType: edge.type,
+        derived: edge.derived,
+        neighbor,
+        outgoing: edge.source === nodeId,
+      });
+    }
+  }
+  return relations;
+};

@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataSet, Network } from 'vis-network/standalone';
-import type { Graph, GraphCluster, GraphEdge, GraphNode } from '@/modules/shared/contracts';
-import { formatPercent } from '@/lib/presentation';
+import type { Graph, GraphCluster, GraphNode } from '@/modules/shared/contracts';
 
 // Cluster colors follow a Tableau-style categorical palette (the palette
 // Graphify derives communities with), so each connected component reads as one
@@ -45,14 +44,6 @@ const clusterColorFor = (clusters: GraphCluster[], nodeId: string) => {
   return index === -1 ? NODE_MUTED : CLUSTER_PALETTE[index % CLUSTER_PALETTE.length];
 };
 
-type Relation = {
-  edgeId: string;
-  edgeType: string;
-  derived: boolean;
-  neighbor: GraphNode;
-  outgoing: boolean;
-};
-
 type GraphNodeItem = {
   id: string;
   label: string;
@@ -78,15 +69,19 @@ type GraphEdgeItem = {
   hidden: boolean;
 };
 
-export function GraphViewer({ graph }: { graph: Graph }) {
+export function GraphViewer({
+  graph,
+  onSelect,
+}: {
+  graph: Graph;
+  onSelect?: (node: GraphNode | null) => void;
+}) {
   const container = useRef<HTMLDivElement>(null);
   const network = useRef<Network | null>(null);
   const nodeDataSet = useRef<DataSet<GraphNodeItem> | null>(null);
   const edgeDataSet = useRef<DataSet<GraphEdgeItem> | null>(null);
   const [query, setQuery] = useState('');
   const [showDerived, setShowDerived] = useState(true);
-  const [selected, setSelected] = useState<GraphNode | null>(null);
-  const [relations, setRelations] = useState<Relation[]>([]);
 
   const derivedCount = useMemo(
     () => graph.edges.filter((edge) => edge.derived).length,
@@ -175,40 +170,13 @@ export function GraphViewer({ graph }: { graph: Graph }) {
     instance.on('click', (params) => {
       const id = params.nodes[0];
       if (typeof id !== 'string') {
-        setSelected(null);
-        setRelations([]);
+        onSelect?.(null);
         return;
       }
-      const node = nodesById.get(id) ?? null;
-      setSelected(node);
-      if (!node) {
-        setRelations([]);
-        return;
-      }
-      const incident = graph.edges
-        .filter((edge) => edge.source === id || edge.target === id)
-        .map((edge) => {
-          const neighborId = edge.source === id ? edge.target : edge.source;
-          return {
-            edgeId: edge.id,
-            edgeType: edge.type,
-            derived: edge.derived,
-            neighbor: nodesById.get(neighborId),
-            outgoing: edge.source === id,
-          };
-        })
-        .filter((entry) => entry.neighbor)
-        .map(({ edgeId, edgeType, derived, neighbor, outgoing }) => ({
-          edgeId,
-          edgeType,
-          derived,
-          neighbor: neighbor as GraphNode,
-          outgoing,
-        }));
-      setRelations(incident);
+      onSelect?.(nodesById.get(id) ?? null);
     });
     return () => instance.destroy();
-  }, [graph, nodesById]);
+  }, [graph, nodesById, onSelect]);
 
   // Search + derived-toggle ride the DataSets directly: hiding nodes/edges is
   // cheaper than rebuilding the Network, and physics state survives the filter.
@@ -254,49 +222,18 @@ export function GraphViewer({ graph }: { graph: Graph }) {
           Fit
         </button>
       </div>
-      <div className="graph-layout">
-        <div>
-          <div className="graph" ref={container} aria-label="Extracted threat knowledge graph" />
-          <div className="legend" aria-label="Cluster legend">
-            {graph.clusters.map((cluster, index) => (
-              <span className="legend-item" key={cluster.id}>
-                <span
-                  className="legend-swatch"
-                  style={{ background: CLUSTER_PALETTE[index % CLUSTER_PALETTE.length] }}
-                />
-                {cluster.label}
-              </span>
-            ))}
-            {graph.clusters.length === 0 && <span className="muted">No clusters yet</span>}
-          </div>
-        </div>
-        <aside className="inspector" aria-live="polite">
-          {selected ? (
-            <>
-              <p className="kind">{selected.type}</p>
-              <h3>{selected.name}</h3>
-              <p className="meta">
-                confidence {formatPercent(selected.confidence)}
-                {selected.aliases && selected.aliases.length > 0
-                  ? ` · ${selected.aliases.join(', ')}`
-                  : ''}
-              </p>
-              {selected.evidence && <div className="evidence">{selected.evidence}</div>}
-              <ul className="relations">
-                {relations.map((relation) => (
-                  <li key={relation.edgeId}>
-                    <span className="arrow">{relation.outgoing ? '→' : '←'}</span>
-                    <span>{relation.neighbor.name}</span>
-                    <span className="badge">{relation.edgeType}</span>
-                    {relation.derived ? <span className="badge derived">inferred</span> : null}
-                  </li>
-                ))}
-              </ul>
-            </>
-          ) : (
-            <p className="meta">Select a node to see its detail and connections.</p>
-          )}
-        </aside>
+      <div className="graph" ref={container} aria-label="Extracted threat knowledge graph" />
+      <div className="legend" aria-label="Cluster legend">
+        {graph.clusters.map((cluster, index) => (
+          <span className="legend-item" key={cluster.id}>
+            <span
+              className="legend-swatch"
+              style={{ background: CLUSTER_PALETTE[index % CLUSTER_PALETTE.length] }}
+            />
+            {cluster.label}
+          </span>
+        ))}
+        {graph.clusters.length === 0 && <span className="muted">No clusters yet</span>}
       </div>
     </div>
   );

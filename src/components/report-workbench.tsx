@@ -3,13 +3,22 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { z } from 'zod';
 import type { Graph } from '@/modules/shared/contracts';
-import { formatBytes, JOB_STAGE_LABELS, jobStage, MAX_REPORT_BYTES } from '@/lib/presentation';
+import {
+  formatBytes,
+  JOB_STAGE_LABELS,
+  jobStage,
+  MAX_REPORT_BYTES,
+  type Selection,
+} from '@/lib/presentation';
 import { GraphViewer } from '@/components/graph-viewer';
-import { ReportPanels } from '@/components/report-panels';
+import { Inspector } from '@/components/report-inspector';
+import { AttckView, ExportView, TimelineView } from '@/components/report-panels';
 
 type Job = { id: string; status: string; progress?: string; partial?: boolean; error?: string };
 
 type Session = 'unknown' | 'ok' | 'out';
+
+type View = 'graph' | 'timeline' | 'attck' | 'export';
 
 type Submission = { kind: 'url'; url: string } | { kind: 'pdf'; file: File };
 
@@ -31,6 +40,8 @@ export function ReportWorkbench() {
   const [lastSubmission, setLastSubmission] = useState<Submission | null>(null);
   const [reportId, setReportId] = useState<string | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
+  const [view, setView] = useState<View>('graph');
+  const [selection, setSelection] = useState<Selection | null>(null);
   const [message, setMessage] = useState(
     'Submit a public threat report URL or PDF to begin analysis.',
   );
@@ -295,14 +306,62 @@ export function ReportWorkbench() {
       {graph && reportId && (
         <>
           <div className="graph-heading">
-            <h2>Extracted knowledge graph</h2>
-            <span>
-              {graph.nodes.length} entities · {graph.edges.length} relationships ·{' '}
-              {graph.clusters.length} clusters
-            </span>
+            <div>
+              <h2>Extracted knowledge graph</h2>
+              <span className="file-numbers mono">
+                {graph.nodes.length} entities · {graph.edges.length} relationships ·{' '}
+                {graph.clusters.length} clusters
+              </span>
+            </div>
+            <span className="tlp mono">TLP:CLEAR</span>
           </div>
-          <GraphViewer graph={graph} />
-          <ReportPanels reportId={reportId} />
+          <nav className="view-tabs" aria-label="Report views">
+            {(['graph', 'timeline', 'attck', 'export'] as View[]).map((candidate) => (
+              <button
+                key={candidate}
+                type="button"
+                className={`view-tab${view === candidate ? ' active' : ''}`}
+                aria-pressed={view === candidate}
+                onClick={() => {
+                  setView(candidate);
+                  if (candidate !== 'graph') setSelection(null);
+                }}
+              >
+                {candidate === 'graph'
+                  ? 'Graph'
+                  : candidate === 'export'
+                    ? 'Export'
+                    : candidate.toUpperCase()}
+              </button>
+            ))}
+          </nav>
+          {view === 'export' ? (
+            <ExportView reportId={reportId} />
+          ) : (
+            <div className="view-layout">
+              <div className="view-main">
+                {view === 'graph' && (
+                  <GraphViewer
+                    graph={graph}
+                    onSelect={(node) => setSelection(node ? { kind: 'node', node } : null)}
+                  />
+                )}
+                {view === 'timeline' && (
+                  <TimelineView
+                    reportId={reportId}
+                    onSelect={(event) => setSelection({ kind: 'timeline', event })}
+                  />
+                )}
+                {view === 'attck' && (
+                  <AttckView
+                    reportId={reportId}
+                    onSelect={(mapping) => setSelection({ kind: 'attck', mapping })}
+                  />
+                )}
+              </div>
+              <Inspector selection={selection} graph={graph} />
+            </div>
+          )}
         </>
       )}
     </section>
