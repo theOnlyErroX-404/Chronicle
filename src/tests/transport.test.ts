@@ -80,4 +80,30 @@ describe('fetchPinned (DNS pinning)', () => {
       await new Promise<void>((resolve) => slow.close(() => resolve()));
     }
   });
+
+  it('aborts the body read when the timeout elapses mid-response (slowloris)', async () => {
+    // Headers arrive instantly, then the body trickles one byte per second:
+    // without the deadline surviving past the headers, the body read would
+    // hang forever (AUDIT-01).
+    const trickle = createServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.write('a');
+      const interval = setInterval(() => res.write('b'), 1_000);
+      req.on('close', () => clearInterval(interval));
+    });
+    await new Promise<void>((resolve) => trickle.listen(0, '127.0.0.1', resolve));
+    const tricklePort = (trickle.address() as { port: number }).port;
+    try {
+      const target: SafePublicUrl = {
+        url: new URL(`http://public.example:${tricklePort}/x`),
+        addresses: [{ address: '127.0.0.1', family: 4 }],
+      };
+      const response = await fetchPinned(target, 80);
+      // Headers resolve, but consuming the trickled body must abort on the
+      // deadline instead of hanging.
+      await expect(response.text()).rejects.toBeInstanceOf(Error);
+    } finally {
+      await new Promise<void>((resolve) => trickle.close(() => resolve()));
+    }
+  });
 });

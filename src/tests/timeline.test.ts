@@ -57,6 +57,31 @@ describe('extractTimelineEvents', () => {
     expect(dates).toHaveLength(3);
   });
 
+  it('parses US m/d/y dates', () => {
+    const events = extractTimelineEvents('First observed on 03/05/2024 and remediated 12/31/2024.');
+    expect(events.map((e) => e.date)).toEqual(['2024-03-05', '2024-12-31']);
+  });
+
+  it('parses day-first written dates (5 March 2024)', () => {
+    const events = extractTimelineEvents('The cluster went live on 5 March 2024.');
+    expect(events.find((e) => e.precision === 'day')?.date).toBe('2024-03-05');
+    expect(events.find((e) => e.precision === 'day')?.matched).toBe('5 March 2024');
+  });
+
+  it('does not emit events for impossible dates (13/45/2024)', () => {
+    const events = extractTimelineEvents('The window closed on 13/45/2024.');
+    expect(events.filter((e) => e.matched === '13/45/2024')).toHaveLength(0);
+  });
+
+  it('calendar-shifts relative months without 30-day drift in short months', () => {
+    // Anchor is 2024-03-31 (March has 31 days): "last month" must land on
+    // February, not a 30-day step that lands back in March.
+    const events = extractTimelineEvents('The group formed last month.', '2024-03-31T00:00:00Z');
+    expect(events.find((e) => e.matched.toLowerCase() === 'last month')?.date).toBe('2024-02');
+    const later = extractTimelineEvents('They returned 3 months later.', '2024-03-31T00:00:00Z');
+    expect(later.find((e) => e.matched === '3 months later')?.date).toBe('2024-06');
+  });
+
   it('outputs schema-valid events with sentence context', () => {
     const text = 'On 2024-06-01 the malware was deployed against targets in Europe.';
     const events = extractTimelineEvents(text);

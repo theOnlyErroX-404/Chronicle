@@ -4,6 +4,64 @@ All notable changes to Chronicle are documented here, newest first. The project
 has no tagged releases yet — sections are anchored to the plan phases in
 `docs/tasks.md`. Version tags are a planned 2-G (deploy) item.
 
+## 2026-08-06 — Audit fixes (2-I, branch fix/audit-findings)
+
+- **Fixed** AUDIT-01 (High, slowloris): the fetch deadline now survives past the
+  response headers — an aborted request destroys the body stream instead of
+  hanging; body-read failures surface as a sanitized 502 `fetch-failed`.
+- **Fixed** AUDIT-02: a malformed percent-escape in the session cookie now
+  yields 401 instead of a 500.
+- **Fixed** AUDIT-03: the active-report cap is enforced atomically inside the
+  store's `create` (memory backend) — the API-level count-then-create TOCTOU
+  window is closed; Postgres backend keeps the pre-check (single-operator scale).
+- **Fixed** AUDIT-04: the login route is throttled (10 attempts/minute sliding
+  window, in-memory).
+- **Fixed** AUDIT-05: timeline now parses US m/d/y and day-first written dates
+  (`5 March 2024`), rejects impossible dates, and calendar-shifts relative
+  months/years (no 30/365-day drift; also fixed an inverted direction bug for
+  "N months later").
+- **Fixed** AUDIT-06: STIX ids are now deterministic UUIDs (v5-style from the
+  node id), `indicator` SDOs carry `pattern` + `valid_from`, and non-standard
+  relationship types get the `x_chronicle_` prefix.
+- **Fixed** AUDIT-07: the partial-extraction path now canonicalizes endpoints
+  like the success path; **AUDIT-08**: non-Latin names no longer normalize to an
+  empty key (distinct entities stay distinct); **AUDIT-09**: unterminated final
+  sentences survive chunking.
+- **Fixed** AUDIT-10: `processReport` rethrows after persisting failure, so
+  BullMQ records failed jobs instead of "completed"; **AUDIT-11**: full
+  fe80::/10 link-local range blocked in URL validation; **AUDIT-12**: redis URL
+  is redacted in worker logs; **AUDIT-13**: feedback targets validated against
+  the report's attck mappings + per-report feedback cap (200); **AUDIT-14**:
+  explicit `/api/v1/auth/session-probe` route replaces the broken 404 probe.
+- **Fixed** AI items: LLM cache key now includes extraction format and provider
+  base URL; `checkHealth` is required on `LlmClient`; invalid LLM output errors
+  carry a truncated raw-output excerpt; defaults synced to the measured
+  nemotron-mini/600s/2100 configuration (code + `.env.example`); circuit
+  breaker sleeps once (no busy-wait); emoji evidence is truncated by code point.
+- **Added** tests for every fix (timeline formats, cookie handling, slowloris
+  abort, atomic cap, login throttle, STIX compliance, partial canonicalization,
+  cache scoping, non-Latin names, chunker tail, rethrow-on-fail).
+- **Changed** docs: audit register marked resolved in `docs/analysis/README.md`,
+  roadmap order updated (2-I before 2-C), decisions log entry added.
+- **Deferred** (noted in register): llm-client.ts split, golden-set enrichment,
+  structured logging — low value, revisit in 2-C.
+
+## 2026-08-06 — Full engineering audit (read-only)
+
+- **Performed** a complete engineering audit per the principal-architect workflow:
+  repo + docs + configs read, 4 parallel deep-dive analyses (API/auth, ingestion,
+  LLM layer, domain modules), live quality gates, Graphify graph.
+- **Added** `docs/analysis/` (README.md = findings register AUDIT-01..14 + scores;
+  system-overview.md = component map, data flow, module graph, seams),
+  `docs/ai/ai-architecture.md` (prompts, cache, guardrails, golden set),
+  `docs/security/security-audit-2026-08-06.md` (threat model + new findings),
+  `docs/testing/testing-report.md` (inventory, gaps, assessment),
+  `docs/operations/operations.md` (deploy, observability, DR, watch-list).
+- **Verdict:** no Critical/High structural issues; 1 High (slowloris body-read
+  timeout — AUDIT-01), 4 Medium, 8 Low. Gates re-verified: 197 passed / 3
+  skipped, coverage 92.6%/80.5%, deps:check 0 violations, audit 0.
+- **No code changes** — audit is read-only; fix set awaits approval before 2-C.
+
 ## 2026-08-06 — Docs restructure (repo organization)
 
 - **Moved** root docs into `docs/`: `Chronicle-architecture.md` →

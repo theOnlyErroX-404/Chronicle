@@ -43,14 +43,26 @@ const fetchPublicReport = async (
   if (Number(response.headers.get('content-length') ?? 0) > config.maxReportBytes) {
     throw new ChronicleError('The fetched report exceeds the configured size limit.', 413);
   }
-  return {
-    bytes: await readStreamWithLimit(
-      response.body,
-      config.maxReportBytes,
-      'The fetched report exceeds the configured size limit.',
-    ),
-    contentType: response.headers.get('content-type')?.toLowerCase() ?? '',
-  };
+  try {
+    return {
+      bytes: await readStreamWithLimit(
+        response.body,
+        config.maxReportBytes,
+        'The fetched report exceeds the configured size limit.',
+      ),
+      contentType: response.headers.get('content-type')?.toLowerCase() ?? '',
+    };
+  } catch (error) {
+    // The pinned fetch's abort signal covers the body read too (see
+    // transport.ts): a timeout there surfaces as a raw stream destroy error,
+    // which must become a sanitized 502 rather than a generic 500.
+    if (error instanceof ChronicleError) throw error;
+    throw new ChronicleError(
+      'The report URL could not be fetched.',
+      502,
+      'https://chronicle.local/problems/fetch-failed',
+    );
+  }
 };
 
 const pdfParseFailed = () =>

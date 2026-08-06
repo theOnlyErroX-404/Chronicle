@@ -28,6 +28,10 @@ describe('resolveSafePublicUrl', () => {
     await expect(resolve('https://192.168.1.1/a')).rejects.toThrow(/not allowed/);
     await expect(resolve('https://[::1]/a')).rejects.toThrow(/not allowed/);
     await expect(resolve('https://[fe80::1]/a')).rejects.toThrow(/not allowed/);
+    // The full fe80::/10 link-local range, not just fe80 exact-match.
+    await expect(resolve('https://[fe90::1:a:B]/a')).rejects.toThrow(/not allowed/);
+    await expect(resolve('https://[fea0::1]/a')).rejects.toThrow(/not allowed/);
+    await expect(resolve('https://[feb0::1]/a')).rejects.toThrow(/not allowed/);
   });
 
   it('rejects IPv4-mapped IPv6 forms of private addresses', async () => {

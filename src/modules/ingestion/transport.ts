@@ -45,7 +45,9 @@ const toWebResponse = (incoming: IncomingMessage): Response => {
 // One pinned HTTP(S) request: connect directly to the validated addresses with
 // the hostname kept only for TLS SNI and certificate verification. No connection
 // reuse, so a request never lands on a socket established against a different
-// host, and a wall-clock abort bounds the whole exchange.
+// host, and a wall-clock abort bounds the whole exchange — including the body
+// read, so a server that trickles bytes after headers still hits the timeout
+// (a slowloris host must not hold the concurrency-1 pipeline hostage).
 export const fetchPinned = (target: SafePublicUrl, timeoutMs: number): Promise<Response> =>
   new Promise((resolve, reject) => {
     const { url, addresses } = target;
@@ -62,7 +64,12 @@ export const fetchPinned = (target: SafePublicUrl, timeoutMs: number): Promise<R
         agent: false,
       },
       (incoming) => {
-        signal.removeEventListener('abort', onAbort);
+        // Keep the deadline alive past the header phase: aborting destroys the
+        // incoming stream, so the body read rejects instead of hanging. The
+        // listener is dropped once the body stream closes.
+        const onAbort = () => incoming.destroy(new Error('The report URL request timed out.'));
+        signal.addEventListener('abort', onAbort, { once: true });
+        incoming.once('close', () => signal.removeEventListener('abort', onAbort));
         resolve(toWebResponse(incoming));
       },
     );

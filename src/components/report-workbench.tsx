@@ -80,11 +80,11 @@ export function ReportWorkbench() {
   );
 
   // The session cookie is HttpOnly (invisible to JS) and SameSite=Strict, so
-  // the token never touches the page. Probe a nonexistent report: 401 means no
-  // session, 404 means the cookie authenticated and the report is just missing.
+  // the token never touches the page. Probe the explicit session route: 401
+  // means no session, 200 means the cookie authenticated.
   const probeSession = async (): Promise<Session> => {
     try {
-      const response = await fetch('/api/v1/reports/session-probe');
+      const response = await fetch('/api/v1/auth/session-probe');
       return response.status === 401 ? 'out' : 'ok';
     } catch {
       return 'out';

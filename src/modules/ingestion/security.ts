@@ -24,8 +24,12 @@ const isPrivateIpv4 = (ip: string) => {
 const isPrivateIpv6 = (ip: string) => {
   const normalized = ip.toLowerCase();
   if (normalized === '::1' || normalized === '::') return true;
+  // fe80::/10 link-local spans fe80–febf (a `fe80:`-only check missed fe81..febf).
   if (
-    normalized.startsWith('fe80:') ||
+    normalized.startsWith('fe8') ||
+    normalized.startsWith('fe9') ||
+    normalized.startsWith('fea') ||
+    normalized.startsWith('feb') ||
     normalized.startsWith('fc') ||
     normalized.startsWith('fd') ||
     normalized.startsWith('fec0:')

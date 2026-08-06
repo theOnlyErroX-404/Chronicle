@@ -24,6 +24,7 @@ const relationship = (
 });
 
 const client = (overrides: Partial<LlmClient> = {}): LlmClient => ({
+  checkHealth: vi.fn(async () => {}),
   extractEntities: vi.fn(async () => []),
   extractRelationships: vi.fn(async () => []),
   ...overrides,
@@ -52,6 +53,12 @@ describe('chunkReportText', () => {
     const chunks = chunkReportText('x'.repeat(500), 120);
     expect(chunks.length).toBe(5);
     for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(120);
+  });
+
+  it('keeps an unterminated final sentence instead of dropping it (AUDIT-09)', () => {
+    const text = `${'A complete sentence. '.repeat(10)}The malware was deployed to`;
+    const chunks = chunkReportText(text, 120);
+    expect(chunks.join(' ').includes('deployed to')).toBe(true);
   });
 });
 
@@ -160,5 +167,34 @@ describe('extractCandidates', () => {
     const merged = await extractCandidates('Short text.', c);
     expect(merged.entities[0].evidence).toHaveLength(60);
     expect(merged.relationships[0].evidence).toHaveLength(60);
+  });
+
+  it('does not split a surrogate pair when truncating emoji evidence', async () => {
+    const c = client({
+      extractEntities: vi.fn(async () => [{ ...entity('EvilRAT'), evidence: '🚀'.repeat(200) }]),
+    });
+    const merged = await extractCandidates('Short text.', c);
+    const evidence = merged.entities[0].evidence;
+    expect([...evidence]).toHaveLength(60);
+    expect(evidence.includes('\uFFFD')).toBe(false);
+  });
+
+  it('canonicalizes variant-name endpoints in partial extraction (AUDIT-07)', async () => {
+    const c = client({
+      extractEntities: vi.fn(async () => [entity('SpyDuck', 'malware')]),
+      extractRelationships: vi
+        .fn()
+        .mockResolvedValueOnce([relationship('SPYDUCK', 'SpyDuck')])
+        .mockRejectedValue(new ChronicleError('upstream failed', 502)),
+    });
+    // 4 chunks: one relationship pass succeeds (with a variant spelling), three
+    // fail — the third failure crosses maxFailed and aborts with the partial.
+    await expect(
+      extractCandidates('One. Two. Three. Four.', c, { maxChars: 4 }),
+    ).rejects.toMatchObject({
+      partial: expect.objectContaining({
+        relationships: expect.arrayContaining([expect.objectContaining({ source: 'SpyDuck' })]),
+      }),
+    });
   });
 });

@@ -9,6 +9,7 @@ import type {
 } from '@/modules/shared/contracts';
 import { config } from '@/lib/config';
 import { createPostgresReportStore } from '@/modules/persistence/postgres-report-store';
+import { ChronicleError } from '@/modules/shared/errors';
 
 export type ReportRecord = {
   id: string;
@@ -37,7 +38,7 @@ export type ReportRecord = {
 type NewReport = Pick<ReportRecord, 'sourceType' | 'sourceUrl' | 'filename'>;
 
 export type ReportStore = {
-  create(input: NewReport): Promise<ReportRecord>;
+  create(input: NewReport, maxActive?: number): Promise<ReportRecord>;
   get(id: string): Promise<ReportRecord | undefined>;
   update(
     id: string,
@@ -55,7 +56,22 @@ class InMemoryReportStore implements ReportStore {
 
   constructor(private readonly maxItems: number) {}
 
-  async create(input: NewReport): Promise<ReportRecord> {
+  async create(input: NewReport, maxActive?: number): Promise<ReportRecord> {
+    // Atomic check-and-insert (no await in between, single-threaded event loop):
+    // closes the TOCTOU window where the API's separate countActive() check and
+    // create() could both pass on concurrent submissions (AUDIT-03).
+    if (maxActive !== undefined) {
+      let active = 0;
+      for (const report of this.reports.values()) {
+        if (activeStatuses.has(report.status)) active += 1;
+      }
+      if (active >= maxActive) {
+        throw new ChronicleError(
+          'Too many active analyses; retry after the current ones finish.',
+          429,
+        );
+      }
+    }
     const now = new Date().toISOString();
     const report: ReportRecord = {
       id: randomUUID(),

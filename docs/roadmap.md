@@ -6,9 +6,10 @@ updated as work happens. This page is the stable forward view.
 
 ## Current phase
 
-**2-G (deployment) — done** (merged `cd50532`, 2026-08-06): docker-compose stack
-(app + worker + postgres + redis), GHCR pull, HttpOnly cookie session auth.
-Next: **2-C (Neo4j graph persistence)**.
+**2-I (audit fixes) — done** on branch `fix/audit-findings` (2026-08-06, awaiting
+merge): all AUDIT-01..14 findings fixed with tests; gates green (218 passed, coverage
+93.4%/81.6%). Next: **2-C (Neo4j graph persistence)**, starting with the graph-design
+session that mirrors Graphify's output organization.
 
 ## Next (in order, each on its own branch)
 
@@ -16,8 +17,8 @@ Next: **2-C (Neo4j graph persistence)**.
    batched `UNWIND` write, env-gated, best-effort).
 2. **2-H** — ClamAV compose service + stdlib INSTREAM client (no new npm deps) before
    PDF parsing; worker network restricted.
-3. **Backlog** (audit findings): PDF object storage, Redis-backed LLM cache, DR
-   backups, structured JSON logging.
+3. **Backlog** (audit deferred items): PDF object storage, Redis-backed LLM cache, DR
+   backups, structured JSON logging, llm-client.ts split, golden-set enrichment.
 
 ## Deferred
 

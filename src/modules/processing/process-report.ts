@@ -39,11 +39,15 @@ export const processReport = async (reportId: string, source: IngestionSource) =
     } catch (storeError) {
       logError('failed to persist failure state', storeError);
     }
+    // Rethrow after persisting so the queue layer sees the failure: BullMQ then
+    // marks the job failed (and keeps it in the failed-retention window) instead
+    // of recording a misleading "completed" for a report whose status is failed.
+    throw error;
   };
 
   try {
     const client = getLlmClient();
-    await client.checkHealth?.();
+    await client.checkHealth();
     await reportStore.update(reportId, {
       status: 'ingesting',
       errorMessage: undefined,

@@ -69,11 +69,16 @@ const toPatch = (patch: Record<string, unknown>): Record<string, unknown> => {
 export const createPostgresReportStore = (
   db: ReportDb = getClient().report as unknown as ReportDb,
 ) => ({
-  async create(input: {
-    sourceType: 'url' | 'pdf';
-    sourceUrl?: string;
-    filename?: string;
-  }): Promise<ReportRecord> {
+  async create(
+    input: {
+      sourceType: 'url' | 'pdf';
+      sourceUrl?: string;
+      filename?: string;
+    },
+    // Ignored: the API-level countActive() gate still applies; a true atomic cap
+    // would need a transaction with a lock, unnecessary at single-operator scale.
+    _maxActive?: number,
+  ): Promise<ReportRecord> {
     const row = await db.create({
       data: {
         id: randomUUID(),

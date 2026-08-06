@@ -45,7 +45,7 @@ export const config = {
   // OPENAI_* variables; the two-pass extraction and JSON schemas are identical.
   llmProvider: process.env.LLM_PROVIDER ?? 'ollama',
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
-  ollamaChatModel: process.env.OLLAMA_CHAT_MODEL ?? 'qwen2.5:3b',
+  ollamaChatModel: process.env.OLLAMA_CHAT_MODEL ?? 'nemotron-mini:latest',
   // Keep the model warm between reports so a second report skips the load-in.
   ollamaKeepAlive: process.env.OLLAMA_KEEP_ALIVE ?? '30m',
   // Small chunks need little context; cap it so memory stays bounded, but keep
@@ -82,9 +82,10 @@ export const config = {
   redisUrl: process.env.REDIS_URL ?? '',
   // Extraction tuning. On CPU-only inference a 3B model is far slower than a
   // hosted API: chunks must stay small and per-call timeouts generous, and it
-  // must stay under Ollama's ~5 minute server-side request cap.
-  llmTimeoutMs: positiveInteger(process.env.LLM_TIMEOUT_MS, 180_000),
-  extractionMaxChunkChars: positiveInteger(process.env.EXTRACTION_MAX_CHUNK_CHARS, 1_200),
+  // must stay under Ollama's ~5 minute server-side request cap. Defaults match
+  // the measured nemotron-mini configuration (see docs/decisions).
+  llmTimeoutMs: positiveInteger(process.env.LLM_TIMEOUT_MS, 600_000),
+  extractionMaxChunkChars: positiveInteger(process.env.EXTRACTION_MAX_CHUNK_CHARS, 2_100),
   // Hard ceiling on the report text fed to extraction. Every chunk costs two LLM
   // calls, so an unbounded page would fan out into tens of thousands of requests;
   // the tail of a huge report is truncated to keep the workload finite.

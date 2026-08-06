@@ -22,7 +22,7 @@ export interface LlmClient {
     chunk: string,
     entities: ExtractedEntity[],
   ): Promise<ExtractedRelationship[]>;
-  checkHealth?(): Promise<void>;
+  checkHealth(): Promise<void>;
 }
 
 // Two-pass extraction. A single combined schema was the reliable ceiling for a
@@ -142,9 +142,11 @@ Report segment:
 ${chunk}`;
 };
 
-const invalidOutput = () =>
+const invalidOutput = (raw?: unknown) =>
   new ChronicleError(
-    'The LLM returned output that failed schema validation.',
+    raw === undefined
+      ? 'The LLM returned output that failed schema validation.'
+      : `The LLM returned output that failed schema validation: ${JSON.stringify(raw).slice(0, 200)}`,
     502,
     'https://chronicle.local/problems/invalid-llm-output',
   );
@@ -153,7 +155,7 @@ const parsePass = <T>(schema: z.ZodType<T>, payload: unknown): T => {
   try {
     return schema.parse(payload);
   } catch {
-    throw invalidOutput();
+    throw invalidOutput(payload);
   }
 };
 
@@ -238,9 +240,16 @@ abstract class BaseLlmClient implements LlmClient {
     messages: Array<{ role: string; content: string }>,
     format: ChatFormat,
   ): Promise<unknown>;
+  abstract checkHealth(): Promise<void>;
 
   async extractEntities(chunk: string): Promise<ExtractedEntity[]> {
-    const key = llmCacheKey([this.identity, PROMPT_FINGERPRINT, 'entities', chunk]);
+    const key = llmCacheKey([
+      this.identity,
+      config.extractionFormat,
+      PROMPT_FINGERPRINT,
+      'entities',
+      chunk,
+    ]);
     const hit = llmCache.get(key);
     if (hit !== undefined) return hit as ExtractedEntity[];
     const result = await runEntityPass((messages, format) => this.chat(messages, format), chunk);
@@ -257,7 +266,14 @@ abstract class BaseLlmClient implements LlmClient {
     const names = [
       ...new Set(entities.map((entity) => `${entity.type}:${entity.name.trim()}`)),
     ].sort();
-    const key = llmCacheKey([this.identity, PROMPT_FINGERPRINT, 'relationships', chunk, ...names]);
+    const key = llmCacheKey([
+      this.identity,
+      config.extractionFormat,
+      PROMPT_FINGERPRINT,
+      'relationships',
+      chunk,
+      ...names,
+    ]);
     const hit = llmCache.get(key);
     if (hit !== undefined) return hit as ExtractedRelationship[];
     const result = await runRelationshipPass(
@@ -282,7 +298,7 @@ const timeoutError = () =>
 const ollamaBase = () => config.ollamaBaseUrl.replace(/\/$/, '');
 
 export class OllamaLlmClient extends BaseLlmClient {
-  protected readonly identity = `ollama:${config.ollamaChatModel}`;
+  protected readonly identity = `ollama:${ollamaBase()}:${config.ollamaChatModel}`;
 
   protected async chat(
     messages: Array<{ role: string; content: string }>,
@@ -402,7 +418,7 @@ export class OpenAiCompatibleLlmClient extends BaseLlmClient {
   }
 
   protected get identity(): string {
-    return `openai:${this.endpoint.chatModel}`;
+    return `openai:${openaiBase(this.endpoint)}:${this.endpoint.chatModel}`;
   }
 
   protected async chat(

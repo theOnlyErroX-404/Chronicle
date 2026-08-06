@@ -25,7 +25,14 @@ const cookieValue = (request: Request, name: string): string | null => {
     const separator = part.indexOf('=');
     if (separator === -1) continue;
     const key = part.slice(0, separator).trim();
-    if (key === name) return decodeURIComponent(part.slice(separator + 1).trim());
+    if (key !== name) continue;
+    // A malformed percent-escape (e.g. `x%zz`) makes decodeURIComponent throw;
+    // treat the cookie as absent rather than letting a 500 escape the auth path.
+    try {
+      return decodeURIComponent(part.slice(separator + 1).trim());
+    } catch {
+      return null;
+    }
   }
   return null;
 };

@@ -6,7 +6,7 @@ import type { TimelineEvent } from '@/modules/shared/contracts';
 // report text is scanned for date expressions, resolved, and ordered.
 //
 // Match priority (first-wins, non-overlapping):
-//   1. full dates   2024-03-05 | 2024/3/5 | March 5, 2024 | 5 March 2024
+//   1. full dates   2024-03-05 | 2024/3/5 | 03/05/2024 | March 5, 2024 | 5 March 2024
 //   2. month-year   March 2024 | Mar 2024
 //   3. year-only    2024 (with CVE-year lookahead guard)
 //   4. relative     yesterday | last week/month/year | N days/weeks/months ago|later
@@ -56,10 +56,23 @@ const toMonth = (name: string): number | undefined => {
 const FULL_ISO = /\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b/g;
 const FULL_WRITTEN =
   /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(\d{1,2}),?\s+(20\d{2})\b/gi;
+// Ambiguous m/d/y slash dates (03/05/2024): the ISO regex requires year-first,
+// so a separate pass covers the US convention (documented above). The `\b` and
+// year-first anchor prevent double-matching year-first forms like 2024/3/5.
+const SLASH_MDY = /\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/g;
+// Day-first written dates ("5 March 2024", common in EU sources).
+const DAY_FIRST_WRITTEN =
+  /\b(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(20\d{2})\b/gi;
 const MONTH_YEAR = /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+(20\d{2})\b/gi;
 const YEAR = /(^|[^\w-])(20\d{2})(?!-\d)\b/g;
 const RELATIVE =
   /\b(yesterday|last\s+week|last\s+month|last\s+year|this\s+week|this\s+month|this\s+year|(?:\d+|a\s+few|several)\s+(?:day|week|month|year)s?\s+(?:later|ago|earlier|prior))\b/gi;
+
+// Reject structurally impossible dates (month 13, day 45): without this guard a
+// garbage span would yield NaN for the relative-date anchor and crash the run
+// with a RangeError in toISOString.
+const validCalendarDate = (y: number, mo: number, d: number) =>
+  y >= 2000 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31;
 
 const sentenceAt = (text: string, pos: number): string => {
   const sentenceStart = Math.max(
@@ -89,6 +102,7 @@ export const extractTimelineEvents = (
 
   for (const m of text.matchAll(FULL_ISO)) {
     const [, y, mo, d] = m;
+    if (!validCalendarDate(+y, +mo, +d)) continue;
     push({
       start: m.index ?? 0,
       end: (m.index ?? 0) + m[0].length,
@@ -100,10 +114,37 @@ export const extractTimelineEvents = (
   }
   for (const m of text.matchAll(FULL_WRITTEN)) {
     const [, name, d, y] = m;
+    const month = toMonth(name);
+    if (!month || !validCalendarDate(+y, month, +d)) continue;
     push({
       start: m.index ?? 0,
       end: (m.index ?? 0) + m[0].length,
-      date: `${y}-${pad(toMonth(name)!)}-${pad(+d)}`,
+      date: `${y}-${pad(month)}-${pad(+d)}`,
+      precision: 'day',
+      matched: m[0],
+      confidence: 1,
+    });
+  }
+  for (const m of text.matchAll(SLASH_MDY)) {
+    const [, mo, d, y] = m;
+    if (!validCalendarDate(+y, +mo, +d)) continue;
+    push({
+      start: m.index ?? 0,
+      end: (m.index ?? 0) + m[0].length,
+      date: `${y}-${pad(+mo)}-${pad(+d)}`,
+      precision: 'day',
+      matched: m[0],
+      confidence: 1,
+    });
+  }
+  for (const m of text.matchAll(DAY_FIRST_WRITTEN)) {
+    const [, d, name, y] = m;
+    const month = toMonth(name);
+    if (!month || !validCalendarDate(+y, month, +d)) continue;
+    push({
+      start: m.index ?? 0,
+      end: (m.index ?? 0) + m[0].length,
+      date: `${y}-${pad(month)}-${pad(+d)}`,
       precision: 'day',
       matched: m[0],
       confidence: 1,
@@ -135,6 +176,17 @@ export const extractTimelineEvents = (
   const anchorMs = anchors[0] ?? Date.parse(fallbackAnchor.slice(0, 10));
   const addDays = (n: number) => new Date(anchorMs + n * 86_400_000);
   const iso = (d: Date) => d.toISOString().slice(0, 10);
+  // Calendar math for month/year units: subtracting 30/365 days drifts at
+  // month boundaries (anchor 2024-03-31 - 30d = 2024-03-01, still March).
+  // Shift the (year, month) tuple directly so "last month" never lands in the
+  // same month as the anchor.
+  const anchorYear = new Date(anchorMs).getUTCFullYear();
+  const anchorMonth = new Date(anchorMs).getUTCMonth() + 1;
+  // n is signed: negative for the past, positive for the future.
+  const shiftMonths = (n: number) => {
+    const total = anchorYear * 12 + (anchorMonth - 1) + n;
+    return `${Math.floor(total / 12)}-${pad((total % 12) + 1)}`;
+  };
 
   for (const m of text.matchAll(RELATIVE)) {
     const token = m[0].toLowerCase();
@@ -145,17 +197,31 @@ export const extractTimelineEvents = (
     let confidence = 0.7;
     if (token === 'yesterday') offset = -1;
     else if (token === 'last week') offset = -7;
-    else if (token === 'last month') {
-      offset = -30;
-      precision = 'month';
-      confidence = 0.6;
-    } else if (token === 'last year') {
-      offset = -365;
-      precision = 'year';
-      confidence = 0.5;
+    else if (token === 'last month' || token === 'last year') {
+      const date = token === 'last month' ? shiftMonths(-1) : String(anchorYear - 1);
+      push({
+        start: m.index ?? 0,
+        end: (m.index ?? 0) + m[0].length,
+        date,
+        precision: token === 'last month' ? 'month' : 'year',
+        matched: m[0],
+        confidence: token === 'last month' ? 0.6 : 0.5,
+      });
+      continue;
     } else if (token === 'this week' || token === 'this month' || token === 'this year') {
+      if (token === 'this month' || token === 'this year') {
+        push({
+          start: m.index ?? 0,
+          end: (m.index ?? 0) + m[0].length,
+          date: token === 'this month' ? shiftMonths(0) : String(anchorYear),
+          precision: token === 'this month' ? 'month' : 'year',
+          matched: m[0],
+          confidence: 0.5,
+        });
+        continue;
+      }
       offset = 0;
-      precision = token === 'this week' ? 'day' : token === 'this month' ? 'month' : 'year';
+      precision = 'day';
       confidence = 0.5;
     } else {
       const rel = /(\d+|a few|several)\s+(day|week|month|year)s?\s+(later|ago|earlier|prior)/.exec(
@@ -164,7 +230,24 @@ export const extractTimelineEvents = (
       if (!rel) continue;
       const n = rel[1] === 'a few' ? 3 : rel[1] === 'several' ? 5 : +rel[1];
       const dir = rel[3] === 'later' ? 1 : -1;
-      offset = dir * days(n, rel[2]);
+      const unit = rel[2];
+      if (unit === 'month' || unit === 'year') {
+        // Calendar-shift N months/years; month precision for months, year for years.
+        precision = unit;
+        confidence = 0.7;
+        offset = dir * n;
+        const date = unit === 'month' ? shiftMonths(offset) : String(anchorYear + offset);
+        push({
+          start: m.index ?? 0,
+          end: (m.index ?? 0) + m[0].length,
+          date,
+          precision,
+          matched: m[0],
+          confidence,
+        });
+        continue;
+      }
+      offset = dir * days(n, unit);
     }
     const resolved = iso(addDays(offset));
     push({

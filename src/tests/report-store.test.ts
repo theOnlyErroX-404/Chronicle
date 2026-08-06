@@ -46,3 +46,24 @@ describe('report store eviction', () => {
     expect(await store.get(next.id)).toBeDefined();
   });
 });
+
+describe('atomic active-report cap (AUDIT-03)', () => {
+  it('rejects create with 429 when the active cap is reached', async () => {
+    const store = createReportStore(10);
+    for (let index = 0; index < 2; index += 1) {
+      await store.create({ sourceType: 'url', sourceUrl: `https://example.com/${index}` });
+    }
+    await expect(
+      store.create({ sourceType: 'url', sourceUrl: 'https://example.com/over' }, 2),
+    ).rejects.toMatchObject({ status: 429 });
+    expect(await store.countActive()).toBe(2);
+  });
+
+  it('allows create when active reports fall below the cap', async () => {
+    const store = createReportStore(10);
+    await store.create({ sourceType: 'url', sourceUrl: 'https://example.com/a' }, 2);
+    await expect(
+      store.create({ sourceType: 'url', sourceUrl: 'https://example.com/b' }, 2),
+    ).resolves.toMatchObject({ status: 'queued' });
+  });
+});

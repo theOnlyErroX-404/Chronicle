@@ -75,11 +75,13 @@ describe('OllamaLlmClient error classification', () => {
   it('health check passes when the configured model is present', async () => {
     mockFetch(() =>
       Promise.resolve(
-        new Response(JSON.stringify({ models: [{ name: 'qwen2.5:3b' }] }), { status: 200 }),
+        new Response(JSON.stringify({ models: [{ name: 'nemotron-mini:latest' }] }), {
+          status: 200,
+        }),
       ),
     );
     const client = new OllamaLlmClient();
-    await expect(client.checkHealth?.()).resolves.toBeUndefined();
+    await expect(client.checkHealth()).resolves.toBeUndefined();
   });
 });
 
@@ -116,6 +118,7 @@ describe('extractCandidates partial failure', () => {
   it('recovers from a single flaky chunk: waits out the breaker, completes the run', async () => {
     let call = 0;
     const client = {
+      checkHealth: vi.fn(async () => {}),
       extractEntities: vi.fn(async () => {
         call += 1;
         if (call === 1) return sample.entities;
@@ -152,6 +155,7 @@ describe('extractCandidates partial failure', () => {
 
   it('aborts only when every chunk has failed, with accumulated results + stats', async () => {
     const client = {
+      checkHealth: vi.fn(async () => {}),
       extractEntities: vi.fn(async () => {
         throw new ChronicleError(
           'Ollama returned HTTP 500.',
@@ -175,6 +179,7 @@ describe('extractCandidates partial failure', () => {
 
   it('does not call the client while the breaker is open, then resumes after cooldown', async () => {
     const client = {
+      checkHealth: vi.fn(async () => {}),
       extractEntities: vi.fn(async () => sample.entities),
       extractRelationships: vi.fn(async () => []),
     };

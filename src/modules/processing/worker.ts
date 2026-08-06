@@ -19,8 +19,10 @@ const main = async () => {
   const worker = createBullMqWorker(config.redisUrl, (job) =>
     processReport(job.data.reportId, jobToSource(fromStoredJob(job.data))),
   );
+  // A redis://user:pass@ URL must never reach the logs (AUDIT-12).
+  const redactedRedisUrl = config.redisUrl.replace(/\/\/[^@/]+@/, '//***@');
   console.log(
-    `[worker] listening on "${JOB_QUEUE_NAME}" (redis ${config.redisUrl}), concurrency 1`,
+    `[worker] listening on "${JOB_QUEUE_NAME}" (redis ${redactedRedisUrl}), concurrency 1`,
   );
 
   const shutdown = async (signal: string) => {

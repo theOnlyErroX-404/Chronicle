@@ -248,6 +248,17 @@ describe('alias-aware entity resolution', () => {
     expect(graph.nodes).toHaveLength(1);
     expect(graph.nodes[0].confidence).toBe(0.95);
   });
+
+  it('keeps distinct non-Latin names as separate nodes (AUDIT-08)', () => {
+    const graph = buildGraph({
+      entities: [
+        { type: 'threat-actor', name: 'Русская Группа', confidence: 0.9, evidence: 'a' },
+        { type: 'threat-actor', name: 'Китайские Хакеры', confidence: 0.9, evidence: 'b' },
+      ],
+      relationships: [],
+    });
+    expect(graph.nodes).toHaveLength(2);
+  });
 });
 
 describe('STIX bundle shape', () => {
@@ -333,10 +344,15 @@ describe('STIX bundle shape', () => {
     }
   });
 
-  it('derives STIX ids deterministically from the graph node ids', () => {
+  it('derives deterministic UUID STIX ids from the graph node ids', () => {
     const node = nodes.find((object) => object.name === 'EvilBoat');
-    const graphNode = graph.nodes.find((n) => n.name === 'EvilBoat');
-    expect(node?.id).toBe(`malware--${graphNode?.id.split('--')[1]}`);
+    expect(node?.id).toMatch(
+      /^malware--[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    const rebuilt = buildStixLiteBundle('report-1', graph);
+    const rebuiltObjects = rebuilt.objects as unknown as StixObject[];
+    const rebuiltNode = rebuiltObjects.find((object) => object.name === 'EvilBoat');
+    expect(rebuiltNode?.id).toBe(node?.id);
   });
 
   it('maps sector and country entities to the STIX identity SDO', () => {
@@ -354,5 +370,46 @@ describe('STIX bundle shape', () => {
     const byName = new Map(objects.map((object) => [object.name, object.type]));
     expect(byName.get('banking')).toBe('identity');
     expect(byName.get('Ukraine')).toBe('identity');
+  });
+
+  it('gives indicator SDOs the required pattern and valid_from', () => {
+    const graph = buildGraph({
+      entities: [
+        {
+          type: 'indicator',
+          name: '203.0.113.7',
+          confidence: 0.9,
+          evidence: 'C2 server',
+        },
+      ],
+      relationships: [],
+    });
+    const bundle = buildStixLiteBundle('report-ind', graph);
+    const objects = bundle.objects as unknown as StixObject[];
+    const indicator = objects[0];
+    expect(indicator.type).toBe('indicator');
+    expect(typeof indicator.pattern).toBe('string');
+    expect(indicator.pattern).toContain('203.0.113.7');
+    expect(indicator.valid_from).toBe(indicator.created);
+    expect(new Date(indicator.valid_from as string).toISOString()).toBe(
+      indicator.valid_from as string,
+    );
+  });
+
+  it('prefixes non-standard relationship types with x_chronicle_', () => {
+    const graph = buildGraph({
+      entities: [
+        { type: 'malware', name: 'Loader', confidence: 0.9, evidence: 'a' },
+        { type: 'malware', name: 'RAT', confidence: 0.9, evidence: 'b' },
+      ],
+      relationships: [
+        { source: 'Loader', target: 'RAT', type: 'executes', confidence: 0.8, evidence: 'x' },
+      ],
+    });
+    const bundle = buildStixLiteBundle('report-x', graph);
+    const relationship = (bundle.objects as unknown as StixObject[]).find(
+      (object) => object.type === 'relationship',
+    );
+    expect(relationship?.relationship_type).toBe('x_chronicle_executes');
   });
 });

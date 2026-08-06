@@ -42,8 +42,11 @@ analysts can spend time on judgment.
   CodeQL alerts. Latest: `2a6f4c9` (docs up to date), before it `f93d84a` (docs/scripts
   restructure), `cd50532` (2-G auth + compose).
 - **Phases done**: 1 (MVP), 2-A Postgres, 2-B BullMQ, 2-D ATT&CK, 2-E timeline, 2-F
-  feedback, 2-G deploy + UI auth. **Next: 2-C Neo4j, then 2-H ClamAV, then backlog**
-  (PDF object storage, Redis LLM cache, DR backups, structured logging).
+  feedback, 2-G deploy + UI auth, **2-I audit fixes** (branch `fix/audit-findings`,
+  all AUDIT-01..14 fixed + tested, 218 passing, awaiting merge). **Next: 2-C Neo4j**
+  (start with the graph-design session mirroring Graphify's output), then 2-H ClamAV,
+  then backlog (llm-client split, PDF object storage, Redis LLM cache, DR backups,
+  structured logging).
 - **Extraction model**: `nemotron-mini:latest` (measured choice — see Key decisions).
 - Server runs on `127.0.0.1:3210` (`npm run build && npm run start`); durable worker:
   `npm run worker` (redis mode). Deployed shape: `docker-compose.yml`.

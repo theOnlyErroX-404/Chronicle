@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { OllamaLlmClient, resetLlmCache } from '@/modules/extraction/llm-client';
+import {
+  OllamaLlmClient,
+  OpenAiCompatibleLlmClient,
+  resetLlmCache,
+} from '@/modules/extraction/llm-client';
+import type { OpenAiEndpoint } from '@/lib/config';
 import type { ExtractedEntity } from '@/modules/shared/contracts';
 
 const jsonResponse = (content: unknown) =>
@@ -7,6 +12,13 @@ const jsonResponse = (content: unknown) =>
     ok: true,
     json: async () => ({ message: { content: JSON.stringify(content) } }),
   }) as unknown as Response;
+
+const endpoint = (baseUrl: string): OpenAiEndpoint => ({
+  baseUrl,
+  apiKey: 'k',
+  chatModel: 'm',
+  maxTokens: 8192,
+});
 
 const entity = (name: string): ExtractedEntity => ({
   type: 'malware',
@@ -144,6 +156,26 @@ describe('OllamaLlmClient extraction passes', () => {
       status: 502,
       type: 'https://chronicle.local/problems/invalid-llm-output',
     });
+  });
+
+  it('scopes the cache to the provider base URL (AUDIT-cache)', async () => {
+    const openAiResponse = (content: unknown) =>
+      ({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: JSON.stringify(content) } }] }),
+      }) as unknown as Response;
+    const fetchMock = vi.fn().mockResolvedValue(openAiResponse({ entities: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = new OpenAiCompatibleLlmClient(endpoint('https://api-a.example/v1'));
+    await first.extractEntities('Same text.');
+    await first.extractEntities('Same text.');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Same model, different provider endpoint: must not hit the shared cache.
+    const second = new OpenAiCompatibleLlmClient(endpoint('https://api-b.example/v1'));
+    await second.extractEntities('Same text.');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('classifies a timed-out call as a 504 llm-timeout', async () => {

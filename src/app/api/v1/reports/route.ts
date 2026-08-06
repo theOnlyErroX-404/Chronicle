@@ -30,11 +30,6 @@ export const MAX_ACTIVE_REPORTS = 8;
 export async function POST(request: Request) {
   try {
     requireApiToken(request);
-    if ((await reportStore.countActive()) >= MAX_ACTIVE_REPORTS)
-      throw new ChronicleError(
-        'Too many active analyses; retry after the current ones finish.',
-        429,
-      );
     const contentType = request.headers.get('content-type') ?? '';
     if (contentType.includes('application/json')) {
       const rawBody = await readStreamWithLimit(
@@ -51,7 +46,13 @@ export async function POST(request: Request) {
       const parsed = jsonReportSchema.safeParse(body);
       if (!parsed.success) throw zodProblem(parsed.error);
       const url = parsed.data.url;
-      const report = await reportStore.create({ sourceType: 'url', sourceUrl: url });
+      // The active-report cap is enforced atomically inside the store's create
+      // (memory backend) — a separate countActive() pre-check has a TOCTOU
+      // window (AUDIT-03).
+      const report = await reportStore.create(
+        { sourceType: 'url', sourceUrl: url },
+        MAX_ACTIVE_REPORTS,
+      );
       jobQueue.enqueue({ reportId: report.id, kind: 'url', url });
       return Response.json(
         { report_id: report.id, job_id: report.id, status: report.status },
@@ -89,7 +90,10 @@ export async function POST(request: Request) {
       throw new ChronicleError('The PDF exceeds the configured size limit.', 413);
     if (file.type && file.type !== 'application/pdf')
       throw new ChronicleError('Only PDF uploads are accepted.', 415);
-    const report = await reportStore.create({ sourceType: 'pdf', filename: file.name });
+    const report = await reportStore.create(
+      { sourceType: 'pdf', filename: file.name },
+      MAX_ACTIVE_REPORTS,
+    );
     const bytes = new Uint8Array(await file.arrayBuffer());
     jobQueue.enqueue({ reportId: report.id, kind: 'pdf', filename: file.name, bytes });
     return Response.json(

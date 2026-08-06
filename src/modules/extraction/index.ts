@@ -30,6 +30,13 @@ export const createCircuitBreaker = (threshold = 2, cooldownMs = 30_000) => {
       if (openedAt === 0) return false;
       return Date.now() - openedAt < cooldownMs;
     },
+    // Milliseconds left in the cooldown, 0 when closed — lets callers sleep once
+    // for the remaining window instead of polling isOpen.
+    remainingMs() {
+      if (openedAt === 0) return 0;
+      const left = openedAt + cooldownMs - Date.now();
+      return left > 0 ? left : 0;
+    },
     recordFailure() {
       consecutive += 1;
       if (consecutive >= threshold) openedAt = Date.now();
@@ -57,7 +64,11 @@ const isRateLimit = (error: unknown) => error instanceof ChronicleError && error
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const chunkReportText = (text: string, maxChars = config.extractionMaxChunkChars) => {
-  const sentences = text.match(/[^.!?]+[.!?]+|.+$/g) ?? [text];
+  // `[\s\S]+$` (not `.+$`): the tail alternative must capture an unterminated
+  // final sentence even when it is followed by a newline or other whitespace —
+  // `.+$` without /m only matches the final line, silently dropping the last
+  // sentence of a truncated report (exactly what MAX_EXTRACTED_CHARS produces).
+  const sentences = text.match(/[^.!?]+[.!?]+|[\s\S]+$/g) ?? [text];
   const chunks: string[] = [];
   const add = (piece: string) => {
     const trimmed = piece.trim();
@@ -123,8 +134,10 @@ export const capEvidence = (
   extraction: ExtractionResult,
   maxChars = MAX_EVIDENCE_CHARS,
 ): ExtractionResult => {
+  // Array.from splits by code point, so an emoji (surrogate pair) is never cut
+  // in half by slice().
   const truncate = (evidence: string) =>
-    evidence.length > maxChars ? evidence.slice(0, maxChars) : evidence;
+    evidence.length > maxChars ? Array.from(evidence).slice(0, maxChars).join('') : evidence;
   return {
     entities: extraction.entities.map((entity) => ({
       ...entity,
@@ -150,9 +163,10 @@ const withRetry = async <T>(operation: () => Promise<T>, breaker?: CircuitBreake
   // A tripped breaker means the model server needs its cooldown, not that the
   // run is over: fail-fast here would abort every remaining chunk on an open
   // breaker and blow the run's failure threshold off a single flaky chunk.
-  // Wait out the cooldown (isOpen is a pure time check, so this is bounded),
-  // then proceed as normal.
-  while (breaker?.isOpen()) await sleep(25);
+  // Wait out the remaining cooldown in one sleep (remainingMs is a pure time
+  // check, so this is bounded), then proceed as normal.
+  const remaining = breaker?.remainingMs() ?? 0;
+  if (remaining > 0) await sleep(remaining + 25);
   let lastError: unknown;
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt += 1) {
     try {
@@ -269,7 +283,10 @@ export const extractCandidates = async (
       );
       allRelationships.push(...found);
     } catch (error) {
-      partial.relationships = mergeRelationships(allRelationships);
+      // Partial path mirrors the success path: endpoints are canonicalized
+      // against the merged entity set so a partial graph links variant names to
+      // the canonical node instead of synthesizing duplicate nodes.
+      partial.relationships = canonicalizeEndpoints(mergeRelationships(allRelationships), entities);
       failed += 1;
       reasons.push(`[relationships] ${failureMessage(index, error)}`);
       if (abortAfter(failed)) failPartial('relationships', error);

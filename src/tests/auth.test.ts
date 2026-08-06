@@ -64,4 +64,20 @@ describe('requireApiToken', () => {
     mockConfig.apiToken = 'secret';
     expect(() => requireApiToken(request('bearer secret'))).not.toThrow();
   });
+
+  it('rejects a malformed session cookie with 401 instead of throwing', () => {
+    mockConfig.apiToken = 'secret';
+    const req = new Request('http://chronicle.local/api/v1/reports', {
+      headers: { cookie: 'chronicle_session=not%zzescaped' },
+    });
+    expect(caught(() => requireApiToken(req))).toMatchObject({ status: 401 });
+  });
+
+  it('accepts a well-formed session cookie', () => {
+    mockConfig.apiToken = 'secret';
+    const req = new Request('http://chronicle.local/api/v1/reports', {
+      headers: { cookie: `chronicle_session=${encodeURIComponent('secret')}` },
+    });
+    expect(() => requireApiToken(req)).not.toThrow();
+  });
 });

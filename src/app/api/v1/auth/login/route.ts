@@ -11,9 +11,33 @@ export const runtime = 'nodejs';
 // and cross-site requests; the API token itself never changes.
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
+// In-memory sliding-window throttle on the login route: a static token has no
+// lockout mechanism, so an online brute force is bounded by attempts-per-minute.
+// Per-process state is fine (single-instance deploy; restart resets the window).
+// ponytail: no per-IP accounting — a single bucket throttles everyone on this
+// single-operator instance; add per-IP buckets if the instance ever goes public.
+const LOGIN_WINDOW_MS = 60_000;
+const LOGIN_MAX_ATTEMPTS = 10;
+const loginAttempts: number[] = [];
+
+const loginThrottled = (): boolean => {
+  const now = Date.now();
+  while (loginAttempts.length > 0 && loginAttempts[0] <= now - LOGIN_WINDOW_MS)
+    loginAttempts.shift();
+  if (loginAttempts.length >= LOGIN_MAX_ATTEMPTS) return true;
+  loginAttempts.push(now);
+  return false;
+};
+
 export async function POST(request: Request) {
   try {
     if (!config.apiToken) throw new ChronicleError('Server authentication is not configured.', 503);
+    if (loginThrottled())
+      throw new ChronicleError(
+        'Too many login attempts; retry in a minute.',
+        429,
+        'https://chronicle.local/problems/rate-limited',
+      );
     const rawBody = await readStreamWithLimit(
       request.body,
       16 * 1024,

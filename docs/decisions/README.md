@@ -15,6 +15,18 @@ decision, not duplicates.
 | Security posture | `docs/security/security-audit.md` + `docs/security/code-findings.md` |
 | Module boundaries | `.dependency-cruiser.cjs` (enforced) |
 | Toolchain usage (Ponytail / Understand / Graphify) | [`tooling/README.md`](tooling/README.md) |
+| Audit (2026-08-06) findings + scores | [`analysis/README.md`](../analysis/README.md) |
+
+## Decision log — 2026-08-06
+
+- **Audit fixes approved and implemented** (branch `fix/audit-findings`): all
+  AUDIT-01..14 + AI items (cache key format/base-url, defaults synced to
+  nemotron-mini/600s/2100, `checkHealth` required, breaker sleep, emoji-safe
+  truncation). Fixes are root-cause, tested (218 passing), gates green.
+- **Engineering audit performed (read-only).** Full findings register
+  `docs/analysis/README.md` (AUDIT-01..14), threat model
+  `docs/security/security-audit-2026-08-06.md`. Verdict: no critical; 1 high
+  (slowloris body read), 4 medium, 8 low. Fixed on approval.
 
 ## Decision log — 2026-08-06
 

@@ -159,4 +159,50 @@ describe('POST /api/v1/reports/[id]/feedback', () => {
     expect(body.count).toBe(2);
     expect(body.feedback[0].id).toBe('c1');
   });
+
+  it('rejects a mapping correction whose attck id is unknown with 422', async () => {
+    mockReports.clear();
+    mockReports.set(
+      'r1',
+      baseReport({
+        attck: [{ attckId: 'T1059', type: 'technique', confidence: 0.8, source: 'explicit' }],
+      }),
+    );
+    const response = await POST(
+      post({ targetType: 'mapping', targetId: 'T1566', action: 'reject' }),
+      { params: Promise.resolve({ id: 'r1' }) },
+    );
+    expect(response.status).toBe(422);
+  });
+
+  it('accepts a mapping correction whose attck id exists on the report', async () => {
+    mockReports.clear();
+    mockReports.set(
+      'r1',
+      baseReport({
+        attck: [{ attckId: 'T1059', type: 'technique', confidence: 0.8, source: 'explicit' }],
+      }),
+    );
+    const response = await POST(
+      post({ targetType: 'mapping', targetId: 'T1059', action: 'reject' }),
+      { params: Promise.resolve({ id: 'r1' }) },
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it('rejects a correction once the per-report feedback cap is reached', async () => {
+    mockReports.clear();
+    const feedback = Array.from({ length: 200 }, (_, index) => ({
+      id: `c${index}`,
+      targetType: 'entity' as const,
+      targetId: 'n1',
+      action: 'accept' as const,
+      createdAt: '2026-08-05T00:00:00.000Z',
+    }));
+    mockReports.set('r1', baseReport({ feedback }));
+    const response = await POST(post({ targetType: 'entity', targetId: 'n1', action: 'reject' }), {
+      params: Promise.resolve({ id: 'r1' }),
+    });
+    expect(response.status).toBe(429);
+  });
 });

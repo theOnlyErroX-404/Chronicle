@@ -12,6 +12,10 @@ export const runtime = 'nodejs';
 // while keeping the body bounded at the trust boundary.
 const MAX_FEEDBACK_BODY_BYTES = 64 * 1024;
 
+// Append-only correction log: generous but bounded, so a report row cannot grow
+// without limit (AUDIT-13).
+const MAX_FEEDBACK_ENTRIES = 200;
+
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     requireApiToken(request);
@@ -50,17 +54,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     // Feedback targets graph entities/relationships by id: reject corrections
     // whose target does not exist, so stored feedback never points at nothing.
-    // (Mapping targets arrive with 2-D; the graph does not know them yet.)
+    // Mapping targets validate against the report's attck array (their ids are
+    // the mapping keys surfaced at GET /reports/{id}/attck).
     const exists =
-      input.targetType === 'mapping' ||
-      (input.targetType === 'entity'
-        ? report.graph.nodes.some((node) => node.id === input.targetId)
-        : report.graph.edges.some((edge) => edge.id === input.targetId));
+      input.targetType === 'mapping'
+        ? (report.attck ?? []).some((mapping) => mapping.attckId === input.targetId)
+        : input.targetType === 'entity'
+          ? report.graph.nodes.some((node) => node.id === input.targetId)
+          : report.graph.edges.some((edge) => edge.id === input.targetId);
     if (!exists)
       throw new ChronicleError(
         'The correction target does not exist in this report.',
         422,
         'https://chronicle.local/problems/invalid-target',
+      );
+
+    // Unbounded append-only growth would let n requests bloat a report row
+    // without limit; cap the correction log per report.
+    if ((report.feedback?.length ?? 0) >= MAX_FEEDBACK_ENTRIES)
+      throw new ChronicleError(
+        'The feedback limit for this report has been reached.',
+        429,
+        'https://chronicle.local/problems/rate-limited',
       );
 
     const correction = { ...input, id: randomUUID(), createdAt: new Date().toISOString() };

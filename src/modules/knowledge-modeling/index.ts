@@ -14,7 +14,11 @@ export const normalizeName = (value: string) =>
     .toLocaleLowerCase()
     .replace(/[^a-z0-9]+/gi, ' ')
     .replace(/^the\s+/, '')
-    .trim();
+    .trim() ||
+  // Non-Latin names (Cyrillic/CJK actor names are common in CTI) strip to the
+  // empty string with the ASCII-only pass; without this fallback every such
+  // entity hashed to the same empty key and silently merged into one node.
+  value.trim().toLocaleLowerCase();
 
 const nodeId = (type: string, name: string) =>
   `${type}--${createHash('sha256')
@@ -252,17 +256,44 @@ const stixTypeFor = (entity: GraphNode) => {
   return 'identity';
 };
 
+// Deterministic UUID (v5-style) from an arbitrary seed: STIX ids must be UUIDs,
+// so the `type--sha256-12hex` node ids cannot pass through as-is (AUDIT-06).
+// sha1 of the seed gives stable ids across rebuilds of the same report.
+const stixUuidFor = (seed: string): string => {
+  const hash = createHash('sha1').update(seed).digest();
+  hash[6] = (hash[6] & 0x0f) | 0x50;
+  hash[8] = (hash[8] & 0x3f) | 0x80;
+  const bytes = [...hash.subarray(0, 16)];
+  const hex = bytes.map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+// STIX 2.1 standard relationship_type vocabulary; everything else gets the
+// x_chronicle_ prefix so strict consumers do not reject custom values (AUDIT-06).
+const STIX_RELATIONSHIP_TYPES = new Set([
+  'attributed-to',
+  'compromises',
+  'derived-from',
+  'duplicates',
+  'follows',
+  'indicates',
+  'mitigates',
+  'targets',
+  'uses',
+  'variant-of',
+]);
+
 export const buildStixLiteBundle = (reportId: string, graph: Graph) => {
   const now = new Date().toISOString();
   const stixIdByNode = new Map<string, string>();
   for (const node of graph.nodes) {
     const stixType = stixTypeFor(node);
-    stixIdByNode.set(node.id, `${stixType}--${node.id.split('--')[1]}`);
+    stixIdByNode.set(node.id, `${stixType}--${stixUuidFor(node.id)}`);
   }
   const objects = [
     ...graph.nodes.map((node) => {
       const stixType = stixTypeFor(node);
-      return {
+      const object: Record<string, unknown> = {
         type: stixType,
         spec_version: '2.1',
         id: stixIdByNode.get(node.id),
@@ -273,19 +304,31 @@ export const buildStixLiteBundle = (reportId: string, graph: Graph) => {
         labels: [node.type],
         x_chronicle_report_id: reportId,
       };
+      // STIX 2.1 requires pattern + valid_from on indicator SDOs; the indicator
+      // node's name is the IOC value, surfaced as a generic value pattern.
+      if (stixType === 'indicator') {
+        object.pattern = `[indicator:name = '${node.name.replace(/[\\']/g, '\\$&')}']`;
+        object.valid_from = now;
+      }
+      return object;
     }),
-    ...graph.edges.map((edge) => ({
-      type: 'relationship',
-      spec_version: '2.1',
-      id: `relationship--${edge.id}`,
-      created: now,
-      modified: now,
-      relationship_type: edge.type,
-      source_ref: stixIdByNode.get(edge.source),
-      target_ref: stixIdByNode.get(edge.target),
-      confidence: Math.round(edge.confidence * 100),
-      x_chronicle_report_id: reportId,
-    })),
+    ...graph.edges.map((edge) => {
+      const relationshipType = STIX_RELATIONSHIP_TYPES.has(edge.type)
+        ? edge.type
+        : `x_chronicle_${edge.type}`;
+      return {
+        type: 'relationship',
+        spec_version: '2.1',
+        id: `relationship--${edge.id}`,
+        created: now,
+        modified: now,
+        relationship_type: relationshipType,
+        source_ref: stixIdByNode.get(edge.source),
+        target_ref: stixIdByNode.get(edge.target),
+        confidence: Math.round(edge.confidence * 100),
+        x_chronicle_report_id: reportId,
+      };
+    }),
   ];
   return { type: 'bundle', id: `bundle--${randomUUID()}`, spec_version: '2.1', objects };
 };
