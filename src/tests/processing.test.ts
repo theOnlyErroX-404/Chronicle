@@ -113,7 +113,7 @@ describe('circuit breaker', () => {
 });
 
 describe('extractCandidates partial failure', () => {
-  it('surfaces accumulated results as an ExtractionFailureError when a chunk fails', async () => {
+  it('recovers from a single flaky chunk: waits out the breaker, completes the run', async () => {
     let call = 0;
     const client = {
       extractEntities: vi.fn(async () => {
@@ -128,36 +128,62 @@ describe('extractCandidates partial failure', () => {
       extractRelationships: vi.fn(async () => []),
     };
     const progress: Array<{ current: number; total: number }> = [];
-    const promise = extractCandidates('First chunk. Second chunk.', client, {
+    // Chunk 2's entity pass exhausts its retries and trips the breaker, but the
+    // breaker only pauses the run: the relationship pass waits out the short
+    // cooldown, succeeds, and the extraction completes with the results the
+    // healthy chunk produced plus a stats record of the one lost chunk.
+    const result = await extractCandidates('First chunk. Second chunk.', client, {
       onProgress: (p) => {
         progress.push(p);
       },
-      breaker: createCircuitBreaker(2, 1_000),
+      breaker: createCircuitBreaker(2, 100),
+      maxChars: 20,
+    });
+    expect(result.entities).toHaveLength(1);
+    expect(result.entities[0].name).toBe('EvilBoat');
+    expect(result.stats).toMatchObject({ totalChunks: 2, failedChunks: 1 });
+    expect(progress).toEqual([
+      { current: 1, total: 4 },
+      { current: 2, total: 4 },
+      { current: 3, total: 4 },
+      { current: 4, total: 4 },
+    ]);
+  });
+
+  it('aborts only when every chunk has failed, with accumulated results + stats', async () => {
+    const client = {
+      extractEntities: vi.fn(async () => {
+        throw new ChronicleError(
+          'Ollama returned HTTP 500.',
+          503,
+          'https://chronicle.local/problems/llm-unavailable',
+        );
+      }),
+      extractRelationships: vi.fn(async () => []),
+    };
+    const promise = extractCandidates('First chunk. Second chunk.', client, {
+      breaker: createCircuitBreaker(1, 25),
       maxChars: 20,
     });
     await expect(promise).rejects.toBeInstanceOf(ExtractionFailureError);
     await promise.catch((error: ExtractionFailureError) => {
-      expect(error.partial.entities).toHaveLength(1);
-      expect(error.partial.entities[0].name).toBe('EvilBoat');
+      expect(error.partial.entities).toEqual([]);
+      expect(error.partial.stats).toMatchObject({ totalChunks: 2, failedChunks: 2 });
+      expect(error.partial.stats?.phase).toBe('entities');
     });
-    expect(progress).toEqual([
-      { current: 1, total: 4 },
-      { current: 2, total: 4 },
-    ]);
   });
 
-  it('does not call the client while the breaker is open', async () => {
+  it('does not call the client while the breaker is open, then resumes after cooldown', async () => {
     const client = {
       extractEntities: vi.fn(async () => sample.entities),
       extractRelationships: vi.fn(async () => []),
     };
-    const breaker = createCircuitBreaker(2, 60_000);
+    const breaker = createCircuitBreaker(1, 200);
     breaker.recordFailure();
-    breaker.recordFailure();
-    await expect(extractCandidates('text', client, { breaker })).rejects.toBeInstanceOf(
-      ChronicleError,
-    );
+    const pending = extractCandidates('text', client, { breaker });
+    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(client.extractEntities).not.toHaveBeenCalled();
-    expect(client.extractRelationships).not.toHaveBeenCalled();
+    await expect(pending).resolves.toBeDefined();
+    expect(client.extractEntities).toHaveBeenCalled();
   });
 });

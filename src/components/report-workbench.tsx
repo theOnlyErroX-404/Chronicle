@@ -84,29 +84,33 @@ export function ReportWorkbench() {
   useEffect(() => {
     if (!job || ['done', 'failed'].includes(job.status)) return;
     const timer = window.setTimeout(async () => {
-      const response = await fetch(`/api/v1/jobs/${job.id}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (!response.ok) return setMessage(await apiError(response));
-      const next = (await response.json()) as {
-        id: string;
-        status: string;
-        progress?: string;
-        partial?: boolean;
-        error?: string;
-      };
-      setJob(next);
-      setMessage(
-        next.status === 'failed'
-          ? (next.error ?? 'Analysis failed.')
-          : `Analysis status: ${next.status}${next.progress ? ` · ${next.progress}` : ''}`,
-      );
-      const finished = next.status === 'done' || (next.status === 'failed' && next.partial);
-      if (finished) {
-        const graphResponse = await fetch(`/api/v1/reports/${next.id}/graph`, {
+      try {
+        const response = await fetch(`/api/v1/jobs/${job.id}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
-        if (graphResponse.ok) setGraph((await graphResponse.json()) as Graph);
+        if (!response.ok) return setMessage(await apiError(response));
+        const next = (await response.json()) as {
+          id: string;
+          status: string;
+          progress?: string;
+          partial?: boolean;
+          error?: string;
+        };
+        setJob(next);
+        setMessage(
+          next.status === 'failed'
+            ? (next.error ?? 'Analysis failed.')
+            : `Analysis status: ${next.status}${next.progress ? ` · ${next.progress}` : ''}`,
+        );
+        const finished = next.status === 'done' || (next.status === 'failed' && next.partial);
+        if (finished) {
+          const graphResponse = await fetch(`/api/v1/reports/${next.id}/graph`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (graphResponse.ok) setGraph((await graphResponse.json()) as Graph);
+        }
+      } catch {
+        setMessage('Connection lost while polling. Is the server still running?');
       }
     }, 1_200);
     return () => window.clearTimeout(timer);
@@ -117,29 +121,37 @@ export function ReportWorkbench() {
     if (!url.trim() && !file) return setMessage('Choose either a public URL or a PDF.');
     setGraph(null);
     setMessage('Submitting report…');
-    const auth: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
-    const response = file
-      ? await fetch('/api/v1/reports', {
-          method: 'POST',
-          headers: auth,
-          body: (() => {
-            const data = new FormData();
-            data.set('file', file);
-            return data;
-          })(),
-        })
-      : await fetch('/api/v1/reports', {
-          method: 'POST',
-          headers:
-            token === ''
-              ? { 'content-type': 'application/json' }
-              : { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ url }),
-        });
-    if (!response.ok) return setMessage(await apiError(response));
-    const created = (await response.json()) as { report_id: string; status: string };
-    setJob({ id: created.report_id, status: created.status });
-    setMessage('Report accepted. Analysis is in progress — the graph appears when it finishes.');
+try {
+      const auth: Record<string, string> = token
+        ? { Authorization: `Bearer ${token}` }
+        : {};
+      const response = file
+        ? await fetch('/api/v1/reports', {
+            method: 'POST',
+            headers: auth,
+            body: (() => {
+              const data = new FormData();
+              data.set('file', file);
+              return data;
+            })(),
+          })
+        : await fetch('/api/v1/reports', {
+            method: 'POST',
+            headers:
+              token === ''
+                ? { 'content-type': 'application/json' }
+                : { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ url }),
+          });
+      if (!response.ok) return setMessage(await apiError(response));
+      const created = (await response.json()) as { report_id: string; status: string };
+      setJob({ id: created.report_id, status: created.status });
+      setMessage(
+        'Report accepted. Analysis is in progress — the graph appears when it finishes.',
+      );
+    } catch {
+      setMessage('Could not reach the server. Is it running?');
+    }
   };
 
   return (

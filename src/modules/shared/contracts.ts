@@ -54,11 +54,23 @@ export const ExtractionRelationshipSchema = z.object({
   evidence: z.string().max(1_500),
 });
 
+const ExtractionStatsSchema = z.object({
+  totalChunks: z.number().int().nonnegative(),
+  failedChunks: z.number().int().nonnegative(),
+  phase: z.enum(['entities', 'relationships']).nullable(),
+  reasons: z.array(z.string().max(300)).default([]),
+});
+export type ExtractionStats = z.infer<typeof ExtractionStatsSchema>;
+
 // Schema kept module-private: extraction validates via the two pass-only schemas
 // in llm-client.ts, so this aggregate is used purely for type inference.
 const ExtractionResultSchema = z.object({
   entities: z.array(ExtractionEntitySchema).max(250),
   relationships: z.array(ExtractionRelationshipSchema).max(500),
+  // Diagnostics for partial resilience: how many chunk calls were attempted in
+  // each phase, how many failed, and why (surfaced so an "incomplete" graph is
+  // explainable, not silent).
+  stats: ExtractionStatsSchema.optional(),
 });
 
 export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
