@@ -33,9 +33,9 @@ const port = process.env.PORT ?? '3210';
 const hostname = process.env.HOSTNAME ?? '127.0.0.1';
 console.log(`[serve] starting standalone server on http://${hostname}:${port}`);
 
-const child = spawn(
-  process.execPath,
-  ['--env-file', join(root, '.env'), 'server.js'],
-  { cwd: standalone, stdio: 'inherit', env: { ...process.env, PORT: port, HOSTNAME: hostname } },
-);
+const child = spawn(process.execPath, ['--env-file', join(root, '.env'), 'server.js'], {
+  cwd: standalone,
+  stdio: 'inherit',
+  env: { ...process.env, PORT: port, HOSTNAME: hostname },
+});
 child.on('exit', (code) => process.exit(code ?? 0));

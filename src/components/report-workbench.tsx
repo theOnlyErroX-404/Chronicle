@@ -68,11 +68,8 @@ const apiError = async (response: Response) => {
 export function ReportWorkbench() {
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [token, setToken] = useState(
-    () =>
-      typeof window === 'undefined'
-        ? ''
-        : (localStorage.getItem('chronicle_api_token') ?? ''),
+  const [token, setToken] = useState(() =>
+    typeof window === 'undefined' ? '' : (localStorage.getItem('chronicle_api_token') ?? ''),
   );
   const [job, setJob] = useState<Job | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
@@ -120,9 +117,7 @@ export function ReportWorkbench() {
     if (!url.trim() && !file) return setMessage('Choose either a public URL or a PDF.');
     setGraph(null);
     setMessage('Submitting report…');
-    const auth: Record<string, string> = token
-      ? { Authorization: `Bearer ${token}` }
-      : {};
+    const auth: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
     const response = file
       ? await fetch('/api/v1/reports', {
           method: 'POST',
@@ -144,9 +139,7 @@ export function ReportWorkbench() {
     if (!response.ok) return setMessage(await apiError(response));
     const created = (await response.json()) as { report_id: string; status: string };
     setJob({ id: created.report_id, status: created.status });
-    setMessage(
-      'Report accepted. Analysis is in progress — the graph appears when it finishes.',
-    );
+    setMessage('Report accepted. Analysis is in progress — the graph appears when it finishes.');
   };
 
   return (
