@@ -5,8 +5,8 @@
 | Tool | Status | Role here |
 |---|---|---|
 | **Ponytail** | ✅ Installed (global opencode skill, `~/.config/opencode/ponytail/`) | Working mode for every code change: smallest diff, stdlib-first, YAGNI. Actively used — see `ponytail:` comments in `src/`. |
-| **Understand** | ✅ Installed (skills in `~/.agents/skills/understand*`) | Interactive knowledge graph of the codebase (`knowledge-graph.json` + dashboard). Use `/understand` for a full graph, `/understand-diff` per change, `/understand-explain` for deep dives. Not run automatically — invoked on demand. |
-| **Graphify** | ❌ **Not installed — and not recommended.** The npm package `graphify` is a random-graph generator, not a codebase analyzer. No legitimate installable "Graphify" exists for repo analysis. | **Do not install.** Understand is the correct graph-based tool for this repo. Any future graph feature belongs inside the app (cytoscape is already a dependency), not in the toolchain. |
+| **Graphify** | ✅ Installed (PyPI `graphifyy` v0.9.34, user-level `pip install --user --break-system-packages graphifyy`; CLI `graphify`) | **Primary repo-analysis tool.** Builds a queryable knowledge graph from the codebase with tree-sitter AST — fully offline, no API cost on code files. Output lands in `graphify-out/` (`graph.json`, `GRAPH_REPORT.md`, `graph.html`, cache). Commands: `graphify .` (build), `graphify update .` (incremental), `graphify query "…"`, `graphify path A B`, `graphify explain X`, `graphify cluster-only .` (regenerate report without re-extracting). Prefer `graphify query` over grepping for architecture questions. Git-ignored — regenerate after meaningful changes. |
+| **Understand** | ✅ Installed (skills in `~/.agents/skills/understand*`) | Interactive knowledge graph of the codebase (`knowledge-graph.json` + dashboard). Secondary/on-demand: use for `/understand-diff` per change or deep dives. Overlaps with Graphify — use Graphify first, Understand when a dashboard or per-change analysis is wanted. |
 
 ## Quality gates (enforced in CI — `.github/workflows/ci.yml`)
 

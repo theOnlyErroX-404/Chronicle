@@ -16,6 +16,20 @@ decision, not duplicates.
 | Module boundaries | `.dependency-cruiser.cjs` (enforced) |
 | Toolchain usage (Ponytail / Understand / Graphify) | [`tooling/README.md`](tooling/README.md) |
 
+## Decision log — 2026-08-06
+
+- **Adopt Graphify as the primary repo-analysis tool.** PyPI `graphifyy` v0.9.34
+  (CLI `graphify`), user-level install (PEP 668 machine: `pip install --user
+  --break-system-packages graphifyy`). Tree-sitter AST extraction is offline and
+  free; output `graphify-out/` is git-ignored and regenerated on meaningful
+  changes. Rationale: queryable architecture graph (`graphify query`) beats
+  grepping; Understand remains available for dashboard/diff use.
+- **Correction to earlier guidance:** a previous session rejected "Graphify"
+  based on the npm package `graphify` (a random-graph generator). The real tool
+  is the PyPI `graphifyy` package — verified working on this repo (495 nodes,
+  1024 edges, 24 communities, 2026-08-06).
+| Toolchain usage (Ponytail / Understand / Graphify) | [`tooling/README.md`](tooling/README.md) |
+
 ## How new decisions get recorded
 
 1. User confirms a decision during a session.

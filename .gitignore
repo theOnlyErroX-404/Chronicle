@@ -107,3 +107,6 @@ vibeguard.config.json
 docs/security/security-audit.md
 docs/security/code-findings.md
 docs/designs/
+
+# Graphify knowledge-graph output (regenerate with `graphify .`)
+graphify-out/
