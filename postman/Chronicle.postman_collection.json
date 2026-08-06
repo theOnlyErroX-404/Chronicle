@@ -434,16 +434,8 @@
             "header": [],
             "url": {
               "raw": "{{baseUrl}}/api/v1/reports/{{report_id}}/timeline",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "v1",
-                "reports",
-                "{{report_id}}",
-                "timeline"
-              ]
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "reports", "{{report_id}}", "timeline"]
             },
             "description": "Chronological timeline for a finished report: temporal expressions parsed deterministically from the text, resolved to concrete dates, ordered ascending. Relative terms (\"last week\", \"3 days later\") resolve against the earliest exact date in the text.\n\nReturns **200** with an ordered array of events:\n- `{ \"id\", \"date\", \"precision\": \"day\"|\"month\"|\"year\", \"matched\", \"label\", \"confidence\" }`\n- `date` matches `precision` (day → YYYY-MM-DD, month → YYYY-MM, year → YYYY)\n\nErrors:\n- **404** unknown `report_id`\n- **409** timeline not ready yet"
           },
