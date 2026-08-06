@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && npm run build:worker",
     "start": "node scripts/serve.mjs",
     "worker": "tsx src/modules/processing/worker.ts",
     "lint": "eslint .",
@@ -17,7 +17,8 @@
     "deps:check": "depcruise src --config .dependency-cruiser.cjs",
     "eval:golden": "tsx src/evaluation/run.ts",
     "attck:refresh": "tsx src/scripts/attck-refresh.ts",
-    "postman:sync": "tsx --env-file=.env src/scripts/postman-sync.ts"
+    "postman:sync": "tsx --env-file=.env src/scripts/postman-sync.ts",
+    "build:worker": "esbuild src/modules/processing/worker.ts --bundle --platform=node --format=cjs --outfile=.next/standalone/worker.cjs --alias:@=./src --external:@prisma/client --external:@prisma/adapter-pg --external:pg"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",
@@ -38,6 +39,7 @@
     "@vitest/coverage-v8": "^4.1.10",
     "dependency-cruiser": "^18.1.1",
     "dotenv": "^17.4.2",
+    "esbuild": "^0.28.1",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.3.0",
     "prettier": "^3.6.0",

@@ -7,6 +7,8 @@ import { ENTITY_TYPE_COLORS, formatBytes, MAX_REPORT_BYTES } from '@/lib/present
 
 type Job = { id: string; status: string; progress?: string; partial?: boolean; error?: string };
 
+type Session = 'unknown' | 'ok' | 'out';
+
 function GraphViewer({ graph }: { graph: Graph }) {
   const container = useRef<HTMLDivElement>(null);
   const cy = useRef<Core | null>(null);
@@ -68,26 +70,67 @@ const apiError = async (response: Response) => {
 export function ReportWorkbench() {
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [token, setToken] = useState(() =>
-    typeof window === 'undefined' ? '' : (localStorage.getItem('chronicle_api_token') ?? ''),
-  );
+  const [loginToken, setLoginToken] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [session, setSession] = useState<Session>('unknown');
   const [job, setJob] = useState<Job | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [message, setMessage] = useState(
     'Submit a public threat report URL or PDF to begin analysis.',
   );
 
+  // The session cookie is HttpOnly (invisible to JS) and SameSite=Strict, so
+  // the token never touches the page. Probe a nonexistent report: 401 means no
+  // session, 404 means the cookie authenticated and the report is just missing.
+  const probeSession = async (): Promise<Session> => {
+    try {
+      const response = await fetch('/api/v1/reports/session-probe');
+      return response.status === 401 ? 'out' : 'ok';
+    } catch {
+      return 'out';
+    }
+  };
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('chronicle_api_token', token);
-  }, [token]);
+    let active = true;
+    void probeSession().then((state) => {
+      if (active) setSession(state);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const logout = async () => {
+    await fetch('/api/v1/auth/logout', { method: 'POST' });
+    setSession('out');
+    setJob(null);
+    setGraph(null);
+    setMessage('Signed out.');
+  };
+
+  const login = async (event: FormEvent) => {
+    event.preventDefault();
+    setLoginError('');
+    const response = await fetch('/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token: loginToken }),
+    });
+    if (response.status === 204) {
+      setLoginToken('');
+      setSession((await probeSession()) === 'ok' ? 'ok' : 'out');
+      setMessage('Signed in. Submit a report to begin.');
+      return;
+    }
+    setLoginError(await apiError(response));
+  };
 
   useEffect(() => {
     if (!job || ['done', 'failed'].includes(job.status)) return;
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch(`/api/v1/jobs/${job.id}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const response = await fetch(`/api/v1/jobs/${job.id}`);
+        if (response.status === 401) return setSession('out');
         if (!response.ok) return setMessage(await apiError(response));
         const next = (await response.json()) as {
           id: string;
@@ -104,9 +147,7 @@ export function ReportWorkbench() {
         );
         const finished = next.status === 'done' || (next.status === 'failed' && next.partial);
         if (finished) {
-          const graphResponse = await fetch(`/api/v1/reports/${next.id}/graph`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          });
+          const graphResponse = await fetch(`/api/v1/reports/${next.id}/graph`);
           if (graphResponse.ok) setGraph((await graphResponse.json()) as Graph);
         }
       } catch {
@@ -114,7 +155,7 @@ export function ReportWorkbench() {
       }
     }, 1_200);
     return () => window.clearTimeout(timer);
-  }, [job, token]);
+  }, [job, session]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -122,11 +163,9 @@ export function ReportWorkbench() {
     setGraph(null);
     setMessage('Submitting report…');
     try {
-      const auth: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
       const response = file
         ? await fetch('/api/v1/reports', {
             method: 'POST',
-            headers: auth,
             body: (() => {
               const data = new FormData();
               data.set('file', file);
@@ -135,12 +174,10 @@ export function ReportWorkbench() {
           })
         : await fetch('/api/v1/reports', {
             method: 'POST',
-            headers:
-              token === ''
-                ? { 'content-type': 'application/json' }
-                : { Authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ url }),
           });
+      if (response.status === 401) return setSession('out');
       if (!response.ok) return setMessage(await apiError(response));
       const created = (await response.json()) as { report_id: string; status: string };
       setJob({ id: created.report_id, status: created.status });
@@ -149,6 +186,39 @@ export function ReportWorkbench() {
       setMessage('Could not reach the server. Is it running?');
     }
   };
+
+  if (session === 'unknown') {
+    return (
+      <section className="workbench">
+        <p className="status" role="status">
+          Checking session…
+        </p>
+      </section>
+    );
+  }
+
+  if (session === 'out') {
+    return (
+      <section className="workbench">
+        <form onSubmit={login} className="submission-form">
+          <label htmlFor="api-token">API token</label>
+          <input
+            id="api-token"
+            value={loginToken}
+            onChange={(event) => setLoginToken(event.target.value)}
+            placeholder="CHRONICLE_API_TOKEN from .env"
+            type="password"
+            autoComplete="off"
+            required
+          />
+          <button type="submit">Sign in</button>
+        </form>
+        <p className="status" role="status">
+          {loginError || 'Sign in to access the analyzer.'}
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="workbench">
@@ -175,17 +245,11 @@ export function ReportWorkbench() {
             setUrl('');
           }}
         />
-        <label htmlFor="api-token">API token (required when NODE_ENV is production)</label>
-        <input
-          id="api-token"
-          value={token}
-          onChange={(event) => setToken(event.target.value)}
-          placeholder={`CHRONICLE_API_TOKEN from .env`}
-          type="password"
-          autoComplete="off"
-        />
         <button type="submit" disabled={Boolean(job && !['done', 'failed'].includes(job.status))}>
           Analyze report
+        </button>
+        <button type="button" className="sign-out" onClick={logout}>
+          Sign out
         </button>
       </form>
       <p className="status" role="status">
