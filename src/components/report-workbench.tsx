@@ -437,7 +437,7 @@ export function ReportWorkbench() {
                 {view === 'attck' && <AttckView reportId={reportId} />}
               </div>
               <Inspector
-                selection={selection}
+                selection={view === 'graph' ? selection : null}
                 graph={graph}
                 hiddenNodes={rejectedNodes}
                 hiddenEdges={rejectedEdges}
