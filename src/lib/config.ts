@@ -86,6 +86,12 @@ export const config = {
   // the measured nemotron-mini configuration (see docs/decisions).
   llmTimeoutMs: positiveInteger(process.env.LLM_TIMEOUT_MS, 600_000),
   extractionMaxChunkChars: positiveInteger(process.env.EXTRACTION_MAX_CHUNK_CHARS, 2_100),
+  // Cap the number of chunks a single run processes. Every chunk costs two LLM
+  // calls (entities + relationships), so without a cap a long report turns into
+  // a minutes-long run on a hosted provider (and minutes more on CPU). Slicing
+  // here bounds worst-case run time; the tail of the report is simply not
+  // extracted. 0 means no cap.
+  extractionMaxChunks: positiveInteger(process.env.EXTRACTION_MAX_CHUNKS, 0),
   // Hard ceiling on the report text fed to extraction. Every chunk costs two LLM
   // calls, so an unbounded page would fan out into tens of thousands of requests;
   // the tail of a huge report is truncated to keep the workload finite.

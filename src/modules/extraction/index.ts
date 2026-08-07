@@ -157,6 +157,8 @@ export type ExtractOptions = {
   onProgress?: (progress: ExtractionProgress) => void | Promise<void>;
   breaker?: CircuitBreaker;
   maxChars?: number;
+  // Hard cap on chunks processed this run (overrides EXTRACTION_MAX_CHUNKS).
+  maxChunks?: number;
 };
 
 const withRetry = async <T>(operation: () => Promise<T>, breaker?: CircuitBreaker): Promise<T> => {
@@ -189,8 +191,10 @@ export const extractCandidates = async (
   options: ExtractOptions = {},
 ): Promise<ExtractionResult> => {
   const chunks = chunkReportText(text, options.maxChars);
-  const totalChunks = chunks.length;
-  const totalPasses = chunks.length * 2;
+  const maxChunks = options.maxChunks ?? config.extractionMaxChunks;
+  const bounded = maxChunks > 0 && chunks.length > maxChunks ? chunks.slice(0, maxChunks) : chunks;
+  const totalChunks = bounded.length;
+  const totalPasses = bounded.length * 2;
   const reportProgress = async (done: number) => {
     await options.onProgress?.({ current: done, total: totalPasses });
   };
@@ -243,11 +247,11 @@ export const extractCandidates = async (
   // Phase 1: entity pass per chunk, schema stays small (one chunk's entities).
   // Deliberately sequential in Phase 1: modest local Ollama hardware normally
   // handles one request well, and hosted free tiers rate-limit bursts.
-  for (let index = 0; index < chunks.length; index += 1) {
+  for (let index = 0; index < bounded.length; index += 1) {
     await reportProgress(index + 1);
     try {
       entitiesByChunk.push(
-        await withRetry(() => client.extractEntities(chunks[index]), options.breaker),
+        await withRetry(() => client.extractEntities(bounded[index]), options.breaker),
       );
     } catch (error) {
       partial.entities = mergeExtractedEntities(entitiesByChunk.flat());
@@ -274,11 +278,11 @@ export const extractCandidates = async (
   // set. Chunk text still limits what the model may cite as evidence, while the
   // schema enum covers every entity in the report (cross-chunk links included).
   phaseName = 'relationships';
-  for (let index = 0; index < chunks.length; index += 1) {
-    await reportProgress(chunks.length + index + 1);
+  for (let index = 0; index < bounded.length; index += 1) {
+    await reportProgress(bounded.length + index + 1);
     try {
       const found = await withRetry(
-        () => client.extractRelationships(chunks[index], entities),
+        () => client.extractRelationships(bounded[index], entities),
         options.breaker,
       );
       allRelationships.push(...found);

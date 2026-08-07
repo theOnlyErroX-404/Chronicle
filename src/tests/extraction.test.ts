@@ -100,6 +100,15 @@ describe('extractCandidates', () => {
     expect(vi.mocked(c.extractRelationships)).not.toHaveBeenCalled();
   });
 
+  it('caps the number of chunks processed when maxChunks is set', async () => {
+    const c = client({ extractEntities: vi.fn(async () => [entity('EvilBoat')]) });
+    const text = 'A sentence long enough to chunk. '.repeat(60);
+    const merged = await extractCandidates(text, c, { maxChars: 60, maxChunks: 2 });
+    expect(vi.mocked(c.extractEntities)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(c.extractRelationships)).toHaveBeenCalledTimes(2);
+    expect(merged.stats?.totalChunks).toBe(2);
+  });
+
   it('runs the relationship pass against the merged entity set', async () => {
     const c = client({
       extractEntities: vi.fn(async () => [entity('EvilRAT')]),
