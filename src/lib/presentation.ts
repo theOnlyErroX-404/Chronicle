@@ -2,7 +2,13 @@
 // literal (a color, a size limit, a type label) is defined once and shared by
 // the server default and the client component instead of being hardcoded twice.
 
-import type { AttckType, Graph, GraphNode } from '@/modules/shared/contracts';
+import type {
+  AttckMapping,
+  AttckType,
+  Graph,
+  GraphNode,
+  TimelineEvent,
+} from '@/modules/shared/contracts';
 
 export const MAX_REPORT_BYTES = 10 * 1024 * 1024;
 
@@ -13,6 +19,11 @@ const CONFIDENCE_VERIFIED = 0.7;
 
 export const confidenceColor = (value: number): string =>
   value >= CONFIDENCE_VERIFIED ? '#4a8b8c' : '#c4622d';
+
+// CSS tier class for confidence pills (verified/review), so the badge and the
+// canvas fill agree on where the threshold sits.
+export const confidenceTier = (value: number): 'verified' | 'review' =>
+  value >= CONFIDENCE_VERIFIED ? 'verified' : 'review';
 
 // Server job statuses (queued/ingesting/extracting/modeling/done/failed) map to
 // analyst-facing stage names for the status screen: pending → extracting →
@@ -60,9 +71,13 @@ export const formatBytes = (bytes: number): string => {
 
 export const formatPercent = (value: number): string => `${Math.round(value * 100)}%`;
 
-// What the shared inspector shows for a tapped node. Timeline and ATT&CK are
-// self-contained views now; only the graph routes through the shared inspector.
-export type Selection = { kind: 'node'; node: GraphNode };
+// What the shared inspector shows for a tapped item: a graph node (review
+// surface), a timeline event, or an ATT&CK mapping. All three kinds render in
+// the same right-hand rail; the workbench owns the selection across tabs.
+export type Selection =
+  | { kind: 'node'; node: GraphNode }
+  | { kind: 'timeline'; event: TimelineEvent }
+  | { kind: 'attck'; mapping: AttckMapping };
 
 export type GraphRelation = {
   edgeId: string;

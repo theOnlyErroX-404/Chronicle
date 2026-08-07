@@ -180,6 +180,7 @@ export function GraphViewer({
       },
     );
     network.current = instance;
+    instance.once('stabilizationIterationsDone', () => instance.fit());
     instance.on('click', (params) => {
       const id = params.nodes[0];
       if (typeof id !== 'string') {

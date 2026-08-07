@@ -4,6 +4,40 @@ All notable changes to Chronicle are documented here, newest first. The project
 has no tagged releases yet — sections are anchored to the plan phases in
 `docs/tasks.md`. Version tags are a planned 2-G (deploy) item.
 
+## 2026-08-07 — Frontend comfort pass + audit round + extraction bounds
+
+Two follow-up rounds: the workbench got real screen space and a shared
+inspector, and the extraction path gained a hard chunk cap so hosted-LLM runs
+always end.
+
+- **Comfort + scale**: shell widened 1160 → 1440px with larger base type;
+  graph canvas grows to `clamp(560px, 68vh, 720px)` and auto-fits its content
+  once the force layout settles; inspector rail widened to 360px; thin
+  graphite scrollbars everywhere; the submission form collapses into a
+  compact strip (report id, counts, Retry / New analysis / Sign out) once a
+  graph is on screen.
+- **Shared inspector**: timeline events and ATT&CK mappings now route into the
+  right-hand rail (evidence cards retired from the views); selection is kept
+  per view, so picking an event no longer wipes a node under review; empty
+  state redesigned (centered `[ ]` mark + instruction).
+- **Timeline track**: uniform pills replaced by a proportional time track —
+  chips sit at their real date position across the report span, year markers
+  are taller than month/day, a year-axis with ticks runs below, chip centers
+  are clamped so first/last markers never clip, and long spans label only
+  years that contain events.
+- **Design mechanics**: confidence marks are now filled, tier-colored pills
+  everywhere (teal ≥ 0.7, rust below, % always inside) — timeline year events
+  (0.6) and ATT&CK 0.9/1.0 rows finally show the tier; folder-style tabs with
+  a raised active surface; Fraunces on the graph heading; custom PDF dropzone
+  (drag-drop + mono filename); STIX export gets a dependency-free tokenizer
+  with confidence values echoed in teal/rust; graph no longer rebuilds on
+  every render (node clicks keep the layout).
+- **Extraction bounds**: new `EXTRACTION_MAX_CHUNKS` (default 0 = no cap)
+  slices the candidate chunks before the LLM passes, so a run is at most
+  `chunks × 2` calls; `.env` switches the provider to OpenRouter
+  (`LLM_PROVIDER=openai`, `google/gemma-4-26b-a4b-it:free`) with the Gemini
+  failover endpoint.
+
 ## 2026-08-07 — Analysis cancel + feedback round (branch feat/graph-redesign)
 
 Follow-up round per analyst feedback: **Stop now really cancels**, the fake

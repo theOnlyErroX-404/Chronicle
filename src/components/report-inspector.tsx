@@ -1,7 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { formatPercent, graphRelations, type Selection } from '@/lib/presentation';
+import {
+  attckPage,
+  confidenceTier,
+  formatPercent,
+  graphRelations,
+  type Selection,
+} from '@/lib/presentation';
 import type { CorrectionInput, Graph } from '@/modules/shared/contracts';
 
 type ReviewInput = {
@@ -11,9 +17,10 @@ type ReviewInput = {
   correctedValue?: Record<string, string | number>;
 };
 
-// The shared right-hand inspector. Only graph nodes route here (timeline and
-// ATT&CK keep their detail inline in their own views); the workbench owns the
-// selection and posts analyst corrections through the onReview callback.
+// The shared right-hand rail. Every view routes its selection here: graph nodes
+// get the review surface (Accept/Reject/Correct), timeline events and ATT&CK
+// mappings get their evidence. The workbench owns the selection and posts
+// analyst corrections through the onReview callback.
 export function Inspector({
   selection,
   graph,
@@ -43,8 +50,61 @@ export function Inspector({
 
   if (!selection) {
     return (
-      <aside className="inspector">
-        <p className="meta">Select a graph node to inspect.</p>
+      <aside className="inspector empty">
+        <p className="meta">
+          Select a node, timeline event, or ATT&CK mapping to inspect its evidence.
+        </p>
+      </aside>
+    );
+  }
+
+  if (selection.kind === 'timeline') {
+    const { event } = selection;
+    return (
+      <aside className="inspector" aria-live="polite">
+        <div className="inspector-stamp">
+          <span className={`confidence-mark ${confidenceTier(event.confidence)}`}>
+            {formatPercent(event.confidence)}
+          </span>
+          <span className="confidence-word">
+            {event.precision === 'day' ? 'exact date' : event.precision}
+          </span>
+        </div>
+        <h3 className="inspector-title mono tl-date">{event.date}</h3>
+        <p className="tl-detail-text">{event.label}</p>
+        <p className="muted mono tl-detail-match">“{event.matched}”</p>
+      </aside>
+    );
+  }
+
+  if (selection.kind === 'attck') {
+    const { mapping } = selection;
+    return (
+      <aside className="inspector" aria-live="polite">
+        <div className="inspector-stamp">
+          <span className={`confidence-mark ${confidenceTier(mapping.confidence)}`}>
+            {formatPercent(mapping.confidence)}
+          </span>
+          <span className="confidence-word">{mapping.type}</span>
+        </div>
+        <h3 className="inspector-title">
+          <span className="mono attck-id">{mapping.attckId}</span>
+          {mapping.name ? ` ${mapping.name}` : ''}
+        </h3>
+        <p className="kind">
+          {mapping.tactic ?? '—'}
+          <a
+            className="attck-link"
+            href={`${attckPage(mapping.type)}/${mapping.attckId}`}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`View ${mapping.attckId} on attack.mitre.org`}
+          >
+            ↗
+          </a>
+        </p>
+        {mapping.source ? <p className="muted mono">{mapping.source}</p> : null}
+        {mapping.matchedText ? <div className="evidence">{mapping.matchedText}</div> : null}
       </aside>
     );
   }
@@ -56,7 +116,9 @@ export function Inspector({
   return (
     <aside className="inspector" aria-live="polite">
       <div className="inspector-stamp">
-        <span className="confidence-mark">{formatPercent(node.confidence)}</span>
+        <span className={`confidence-mark ${confidenceTier(node.confidence)}`}>
+          {formatPercent(node.confidence)}
+        </span>
         <span className="confidence-word">
           {node.confidence >= 0.7 ? 'verified' : 'needs review'}
         </span>

@@ -1,15 +1,15 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
-import type { CorrectionInput, Graph } from '@/modules/shared/contracts';
-import {
-  formatBytes,
-  JOB_STAGE_LABELS,
-  jobStage,
-  MAX_REPORT_BYTES,
-  type Selection,
-} from '@/lib/presentation';
+import type {
+  AttckMapping,
+  CorrectionInput,
+  Graph,
+  GraphNode,
+  TimelineEvent,
+} from '@/modules/shared/contracts';
+import { formatBytes, JOB_STAGE_LABELS, jobStage, MAX_REPORT_BYTES } from '@/lib/presentation';
 import { GraphViewer } from '@/components/graph-viewer';
 import { Inspector } from '@/components/report-inspector';
 import { AttckView, ExportView, TimelineView } from '@/components/report-panels';
@@ -21,6 +21,15 @@ type Session = 'unknown' | 'ok' | 'out';
 type View = 'graph' | 'timeline' | 'attck' | 'export';
 
 type Submission = { kind: 'url'; url: string } | { kind: 'pdf'; file: File };
+
+// One selection slot per view, so picking a timeline event does not wipe the
+// node that was under review on the graph tab (and vice versa). The active
+// view's slot feeds the shared inspector.
+type Selections = {
+  node: GraphNode | null;
+  timeline: TimelineEvent | null;
+  attck: AttckMapping | null;
+};
 
 const urlSchema = z.url('Provide a valid report URL.');
 
@@ -35,6 +44,7 @@ export function ReportWorkbench() {
   const [mode, setMode] = useState<'url' | 'pdf'>('url');
   const [url, setUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [loginToken, setLoginToken] = useState('');
   const [loginError, setLoginError] = useState('');
   const [session, setSession] = useState<Session>('unknown');
@@ -43,7 +53,20 @@ export function ReportWorkbench() {
   const [reportId, setReportId] = useState<string | null>(null);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [view, setView] = useState<View>('graph');
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const [selections, setSelections] = useState<Selections>({
+    node: null,
+    timeline: null,
+    attck: null,
+  });
+  const setViewSelection = <K extends keyof Selections>(key: K, value: Selections[K]) =>
+    setSelections((current) => ({ ...current, [key]: value }));
+
+  // Stable identity: GraphViewer rebuilds its vis-network instance when this
+  // handler's reference changes, so every render used to reset the layout.
+  const handleNodeSelect = useCallback(
+    (node: GraphNode | null) => setViewSelection('node', node),
+    [],
+  );
   const [rejectedNodes, setRejectedNodes] = useState<Set<string>>(new Set());
   const [rejectedEdges, setRejectedEdges] = useState<Set<string>>(new Set());
   const [renames, setRenames] = useState<Map<string, string>>(new Map());
@@ -202,7 +225,7 @@ export function ReportWorkbench() {
     setJob({ id: created.report_id, status: created.status });
     setReportId(null);
     setGraph(null);
-    setSelection(null);
+    setSelections({ node: null, timeline: null, attck: null });
     setRejectedNodes(new Set());
     setRejectedEdges(new Set());
     setRenames(new Map());
@@ -245,6 +268,19 @@ export function ReportWorkbench() {
       setStopping(false);
       setMessage('Could not reach the server to stop the analysis.');
     }
+  };
+
+  // Back to the submission form once a graph is on screen: clears the view
+  // state so a fresh report starts clean (the previous run stays in the DB).
+  const newAnalysis = () => {
+    setJob(null);
+    setReportId(null);
+    setGraph(null);
+    setSelections({ node: null, timeline: null, attck: null });
+    setRejectedNodes(new Set());
+    setRejectedEdges(new Set());
+    setRenames(new Map());
+    setMessage('Ready. Submit a new report to begin analysis.');
   };
 
   if (session === 'unknown') {
@@ -315,61 +351,13 @@ export function ReportWorkbench() {
           </button>
         </div>
       )}
-      <form onSubmit={submit} className="submission-form">
-        <div className="source-toggle" role="group" aria-label="Report source">
-          <button
-            type="button"
-            className={`toolbar-toggle${mode === 'url' ? ' active' : ''}`}
-            aria-pressed={mode === 'url'}
-            disabled={active}
-            onClick={() => setMode('url')}
-          >
-            Public URL
-          </button>
-          <button
-            type="button"
-            className={`toolbar-toggle${mode === 'pdf' ? ' active' : ''}`}
-            aria-pressed={mode === 'pdf'}
-            disabled={active}
-            onClick={() => setMode('pdf')}
-          >
-            PDF file
-          </button>
-        </div>
-        {mode === 'url' ? (
-          <label htmlFor="report-url">
-            Public report URL
-            <input
-              id="report-url"
-              value={url}
-              disabled={active}
-              onChange={(event) => {
-                setUrl(event.target.value);
-                setFile(null);
-              }}
-              placeholder="https://security.vendor.com/research/report"
-              type="url"
-            />
-          </label>
-        ) : (
-          <label htmlFor="report-file">
-            Threat report PDF (max {formatBytes(MAX_REPORT_BYTES)})
-            <input
-              id="report-file"
-              type="file"
-              accept="application/pdf,.pdf"
-              disabled={active}
-              onChange={(event) => {
-                setFile(event.target.files?.[0] ?? null);
-                setUrl('');
-              }}
-            />
-          </label>
-        )}
-        <div className="form-actions">
-          <button type="submit" disabled={active}>
-            Analyze report
-          </button>
+      {graph && reportId ? (
+        <div className="analysis-strip">
+          <span className="mono report-id">{reportId.slice(0, 8)}</span>
+          <span className="file-numbers">
+            {graph.nodes.length} entities · {graph.edges.length} relationships ·{' '}
+            {graph.clusters.length} clusters
+          </span>
           {job?.status === 'failed' && lastSubmission ? (
             <button
               type="button"
@@ -379,11 +367,101 @@ export function ReportWorkbench() {
               Retry
             </button>
           ) : null}
-          <button type="button" className="sign-out" disabled={active} onClick={logout}>
+          <button type="button" className="toolbar-toggle" onClick={newAnalysis}>
+            New analysis
+          </button>
+          <button type="button" className="sign-out" onClick={logout}>
             Sign out
           </button>
         </div>
-      </form>
+      ) : (
+        <form onSubmit={submit} className="submission-form">
+          <div className="source-toggle" role="group" aria-label="Report source">
+            <button
+              type="button"
+              className={`toolbar-toggle${mode === 'url' ? ' active' : ''}`}
+              aria-pressed={mode === 'url'}
+              disabled={active}
+              onClick={() => setMode('url')}
+            >
+              Public URL
+            </button>
+            <button
+              type="button"
+              className={`toolbar-toggle${mode === 'pdf' ? ' active' : ''}`}
+              aria-pressed={mode === 'pdf'}
+              disabled={active}
+              onClick={() => setMode('pdf')}
+            >
+              PDF file
+            </button>
+          </div>
+          {mode === 'url' ? (
+            <label htmlFor="report-url">
+              Public report URL
+              <input
+                id="report-url"
+                value={url}
+                disabled={active}
+                onChange={(event) => {
+                  setUrl(event.target.value);
+                  setFile(null);
+                }}
+                placeholder="https://security.vendor.com/research/report"
+                type="url"
+              />
+            </label>
+          ) : (
+            <label
+              htmlFor="report-file"
+              className={`file-dropzone${file ? ' has-file' : ''}${dragOver ? ' dragover' : ''}`}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDragOver(true);
+              }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDragOver(false);
+                setFile(event.dataTransfer.files?.[0] ?? null);
+                setUrl('');
+              }}
+            >
+              <span>{file ? 'Threat report PDF selected' : 'Choose or drop a PDF file'}</span>
+              <span className="mono file-dropzone-name">
+                {file ? file.name : `max ${formatBytes(MAX_REPORT_BYTES)}`}
+              </span>
+              <input
+                id="report-file"
+                type="file"
+                accept="application/pdf,.pdf"
+                disabled={active}
+                onChange={(event) => {
+                  setFile(event.target.files?.[0] ?? null);
+                  setUrl('');
+                }}
+              />
+            </label>
+          )}
+          <div className="form-actions">
+            <button type="submit" disabled={active}>
+              Analyze report
+            </button>
+            {job?.status === 'failed' && lastSubmission ? (
+              <button
+                type="button"
+                className="toolbar-toggle retry"
+                onClick={() => void post(lastSubmission)}
+              >
+                Retry
+              </button>
+            ) : null}
+            <button type="button" className="sign-out" disabled={active} onClick={logout}>
+              Sign out
+            </button>
+          </div>
+        </form>
+      )}
       <p className="status" role="status">
         {message}
       </p>
@@ -406,16 +484,11 @@ export function ReportWorkbench() {
                 type="button"
                 className={`view-tab${view === candidate ? ' active' : ''}`}
                 aria-pressed={view === candidate}
-                onClick={() => {
-                  setView(candidate);
-                  if (candidate !== 'graph') setSelection(null);
-                }}
+                onClick={() => setView(candidate)}
               >
-                {candidate === 'graph'
-                  ? 'Graph'
-                  : candidate === 'export'
-                    ? 'Export'
-                    : candidate.toUpperCase()}
+                {candidate === 'attck'
+                  ? 'ATT&CK'
+                  : `${candidate.charAt(0).toUpperCase()}${candidate.slice(1)}`}
               </button>
             ))}
           </nav>
@@ -427,17 +500,41 @@ export function ReportWorkbench() {
                 {view === 'graph' && (
                   <GraphViewer
                     graph={graph}
-                    onSelect={(node) => setSelection(node ? { kind: 'node', node } : null)}
+                    onSelect={handleNodeSelect}
                     hiddenNodes={rejectedNodes}
                     hiddenEdges={rejectedEdges}
                     renames={renames}
                   />
                 )}
-                {view === 'timeline' && <TimelineView reportId={reportId} />}
-                {view === 'attck' && <AttckView reportId={reportId} />}
+                {view === 'timeline' && (
+                  <TimelineView
+                    reportId={reportId}
+                    selected={selections.timeline}
+                    onSelect={(event) => setViewSelection('timeline', event)}
+                  />
+                )}
+                {view === 'attck' && (
+                  <AttckView
+                    reportId={reportId}
+                    selected={selections.attck}
+                    onSelect={(mapping) => setViewSelection('attck', mapping)}
+                  />
+                )}
               </div>
               <Inspector
-                selection={view === 'graph' ? selection : null}
+                selection={
+                  view === 'graph'
+                    ? selections.node
+                      ? { kind: 'node', node: selections.node }
+                      : null
+                    : view === 'timeline'
+                      ? selections.timeline
+                        ? { kind: 'timeline', event: selections.timeline }
+                        : null
+                      : selections.attck
+                        ? { kind: 'attck', mapping: selections.attck }
+                        : null
+                }
                 graph={graph}
                 hiddenNodes={rejectedNodes}
                 hiddenEdges={rejectedEdges}
