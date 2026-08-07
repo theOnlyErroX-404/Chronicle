@@ -30,6 +30,32 @@ export const processReport = async (reportId: string, source: IngestionSource) =
     await reportStore.update(reportId, { progress: text });
   };
 
+  // Cancellation is a flag, not a status: POST /jobs/[id]/cancel sets it and
+  // this pipeline polls between stages. Throwing here aborts the LLM loop at
+  // the next chunk boundary instead of letting a 5-minute chunk ride out.
+  const cancelError = async (): Promise<never> => {
+    throw new Error('cancelled');
+  };
+
+  const checkCancelled = async () => {
+    if ((await reportStore.get(reportId))?.cancelled) await cancelError();
+  };
+
+  // Persist the terminal status the cancel happened, preserving nothing further
+  // computed by the aborted run (no partial flag: the user asked to stop).
+  const abortForCancellation = async () => {
+    try {
+      await reportStore.update(reportId, {
+        status: 'cancelled',
+        errorMessage: 'Analysis cancelled by the user.',
+        progress: undefined,
+        partial: undefined,
+      });
+    } catch (storeError) {
+      logError('failed to persist cancelled state', storeError);
+    }
+  };
+
   const fail = async (error: unknown, partial = false) => {
     const safeMessage =
       error instanceof ChronicleError ? error.message : 'The report could not be fully processed.';
@@ -46,6 +72,9 @@ export const processReport = async (reportId: string, source: IngestionSource) =
   };
 
   try {
+    // Stop before touching anything if the user cancelled while queued.
+    await checkCancelled();
+
     const client = getLlmClient();
     await client.checkHealth();
     await reportStore.update(reportId, {
@@ -54,11 +83,13 @@ export const processReport = async (reportId: string, source: IngestionSource) =
       partial: undefined,
       progress: 'ingesting',
     });
+    await checkCancelled();
     const rawText = await ingestReport(source);
     // ATT&CK mapping and the timeline need only the raw text (no LLM), so
-    // compute both here — they then survive a later partial-extraction failure
+    // compute both here — they then survive a later cancellation-free failure
     // instead of being lost. Timeline relative terms anchor to the earliest
     // exact date in the text (fallback: submission time).
+    await checkCancelled();
     const attck = matchExplicitTechniques(rawText);
     const timeline = extractTimelineEvents(rawText);
     await reportStore.update(reportId, {
@@ -70,12 +101,18 @@ export const processReport = async (reportId: string, source: IngestionSource) =
     });
 
     const extraction = await extractCandidates(rawText, client, {
-      onProgress: ({ current, total }) => setProgress(`chunk ${current}/${total}`),
+      // Poll the flag on every chunk-pass report; this is where a slow run
+      // gets aborted between chunks rather than after the whole model pass.
+      onProgress: async (progress) => {
+        await checkCancelled();
+        await setProgress(`chunk ${progress.current}/${progress.total}`);
+      },
       // One breaker per report, shared across both passes: after repeated
       // consecutive failures the LLM server gets a cooldown instead of a
       // sustained hammering from retries.
       breaker: createCircuitBreaker(),
     });
+    await checkCancelled();
     const completed = completeEntityEndpoints(extraction);
     await reportStore.update(reportId, {
       extraction: { ...completed, stats: extraction.stats },
@@ -93,6 +130,10 @@ export const processReport = async (reportId: string, source: IngestionSource) =
       progress: undefined,
     });
   } catch (error) {
+    if (error instanceof Error && error.message === 'cancelled') {
+      await abortForCancellation();
+      return;
+    }
     if (error instanceof ExtractionFailureError) {
       // Partial success: a late chunk failed, but earlier chunks extracted fine.
       // Surface a partial graph/STIX bundle rather than discarding everything.

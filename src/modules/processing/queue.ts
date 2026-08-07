@@ -20,6 +20,8 @@ export interface JobQueue {
   enqueue(job: QueueJob): void;
   pending(): Promise<number>;
   running(): Promise<boolean>;
+  // Best-effort drop of a job that has not started running yet (cancel).
+  remove?(jobId: string): void;
   close?(): Promise<void>;
 }
 
@@ -42,6 +44,13 @@ class InMemoryJobQueue implements JobQueue {
 
   async running(): Promise<boolean> {
     return this.busy;
+  }
+
+  remove(jobId: string): void {
+    // In-memory: nothing to drop — the pump may already be about to run it,
+    // and processReport's own cancellation checks make the drop unnecessary
+    // (the worker aborts cleanly the moment it observes the cancelled flag).
+    void jobId;
   }
 
   private async pump(): Promise<void> {
@@ -130,6 +139,13 @@ export const createBullMqQueue = (redisUrl: string): JobQueue => {
     async running(): Promise<boolean> {
       const counts = await queue.getJobCounts('active');
       return (counts.active ?? 0) > 0;
+    },
+
+    remove(jobId: string): void {
+      // A running job cannot be removed; a waiting one is dropped so the worker
+      // never starts it after the cancel flag was set (AUDIT-safe: failure to
+      // remove is non-fatal, the worker checks the flag anyway).
+      queue.remove(jobId).catch(() => undefined);
     },
 
     close: () => queue.close(),

@@ -29,6 +29,8 @@ const apiError = async (response: Response) => {
   return payload.detail ?? `Request failed with HTTP ${response.status}.`;
 };
 
+const TERMINAL_STATUSES = ['done', 'failed', 'cancelled'];
+
 export function ReportWorkbench() {
   const [mode, setMode] = useState<'url' | 'pdf'>('url');
   const [url, setUrl] = useState('');
@@ -48,8 +50,9 @@ export function ReportWorkbench() {
   const [message, setMessage] = useState(
     'Submit a public threat report URL or PDF to begin analysis.',
   );
+  const [stopping, setStopping] = useState(false);
 
-  const active = Boolean(job && !['done', 'failed'].includes(job.status));
+  const active = Boolean(job && !TERMINAL_STATUSES.includes(job.status));
   const activeJob = active && job ? job : null;
   const activeStage = activeJob ? jobStage(activeJob.status, activeJob.progress) : null;
 
@@ -138,7 +141,7 @@ export function ReportWorkbench() {
   };
 
   useEffect(() => {
-    if (!job || ['done', 'failed'].includes(job.status)) return;
+    if (!job || TERMINAL_STATUSES.includes(job.status)) return;
     const timer = window.setTimeout(async () => {
       try {
         const response = await fetch(`/api/v1/jobs/${job.id}`);
@@ -155,8 +158,11 @@ export function ReportWorkbench() {
         setMessage(
           next.status === 'failed'
             ? (next.error ?? 'Analysis failed.')
-            : `${jobStage(next.status, next.progress).label} · ${next.status}`,
+            : next.status === 'cancelled'
+              ? 'Analysis cancelled.'
+              : `${jobStage(next.status, next.progress).label} · ${next.status}`,
         );
+        if (next.status === 'cancelled') setStopping(false);
         const finished = next.status === 'done' || (next.status === 'failed' && next.partial);
         if (finished && next.id !== reportId) {
           setReportId(next.id);
@@ -218,6 +224,29 @@ export function ReportWorkbench() {
     }
   };
 
+  // Ask the server to stop the running analysis. The worker aborts between
+  // chunks and flips the status; the poll loop surfaces it as 'cancelled'.
+  const stopJob = async () => {
+    if (!activeJob) return;
+    setStopping(true);
+    try {
+      const response = await fetch(`/api/v1/jobs/${activeJob.id}/cancel`, { method: 'POST' });
+      if (response.status === 401) {
+        setSession('out');
+        return;
+      }
+      if (!response.ok) {
+        setMessage(await apiError(response));
+        setStopping(false);
+        return;
+      }
+      setMessage('Stopping analysis…');
+    } catch {
+      setStopping(false);
+      setMessage('Could not reach the server to stop the analysis.');
+    }
+  };
+
   if (session === 'unknown') {
     return (
       <section className="workbench">
@@ -276,6 +305,14 @@ export function ReportWorkbench() {
             })}
           </ol>
           <p className="status">{activeStage.label}</p>
+          <button
+            type="button"
+            className="toolbar-toggle stop"
+            disabled={stopping}
+            onClick={() => void stopJob()}
+          >
+            {stopping ? 'Stopping…' : 'Stop analysis'}
+          </button>
         </div>
       )}
       <form onSubmit={submit} className="submission-form">
@@ -284,6 +321,7 @@ export function ReportWorkbench() {
             type="button"
             className={`toolbar-toggle${mode === 'url' ? ' active' : ''}`}
             aria-pressed={mode === 'url'}
+            disabled={active}
             onClick={() => setMode('url')}
           >
             Public URL
@@ -292,6 +330,7 @@ export function ReportWorkbench() {
             type="button"
             className={`toolbar-toggle${mode === 'pdf' ? ' active' : ''}`}
             aria-pressed={mode === 'pdf'}
+            disabled={active}
             onClick={() => setMode('pdf')}
           >
             PDF file
@@ -303,6 +342,7 @@ export function ReportWorkbench() {
             <input
               id="report-url"
               value={url}
+              disabled={active}
               onChange={(event) => {
                 setUrl(event.target.value);
                 setFile(null);
@@ -318,6 +358,7 @@ export function ReportWorkbench() {
               id="report-file"
               type="file"
               accept="application/pdf,.pdf"
+              disabled={active}
               onChange={(event) => {
                 setFile(event.target.files?.[0] ?? null);
                 setUrl('');
@@ -338,7 +379,7 @@ export function ReportWorkbench() {
               Retry
             </button>
           ) : null}
-          <button type="button" className="sign-out" onClick={logout}>
+          <button type="button" className="sign-out" disabled={active} onClick={logout}>
             Sign out
           </button>
         </div>
@@ -356,7 +397,7 @@ export function ReportWorkbench() {
                 {graph.clusters.length} clusters
               </span>
             </div>
-            <span className="tlp mono">TLP:CLEAR</span>
+            <span className="mono report-id">{reportId.slice(0, 8)}</span>
           </div>
           <nav className="view-tabs" aria-label="Report views">
             {(['graph', 'timeline', 'attck', 'export'] as View[]).map((candidate) => (
@@ -392,18 +433,8 @@ export function ReportWorkbench() {
                     renames={renames}
                   />
                 )}
-                {view === 'timeline' && (
-                  <TimelineView
-                    reportId={reportId}
-                    onSelect={(event) => setSelection({ kind: 'timeline', event })}
-                  />
-                )}
-                {view === 'attck' && (
-                  <AttckView
-                    reportId={reportId}
-                    onSelect={(mapping) => setSelection({ kind: 'attck', mapping })}
-                  />
-                )}
+                {view === 'timeline' && <TimelineView reportId={reportId} />}
+                {view === 'attck' && <AttckView reportId={reportId} />}
               </div>
               <Inspector
                 selection={selection}

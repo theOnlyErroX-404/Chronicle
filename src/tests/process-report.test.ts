@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ChronicleError } from '@/modules/shared/errors';
 
 const mockStore = vi.hoisted(() => ({
+  get: vi.fn(async () => null),
   update: vi.fn(async (_id: string, _patch: Record<string, unknown>) => ({})),
 }));
 const mockGetLlmClient = vi.hoisted(() => vi.fn());

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  attckPage,
   confidenceColor,
   formatBytes,
   formatPercent,
@@ -57,6 +58,13 @@ describe('graphRelations', () => {
     expect(relations[0]).toMatchObject({ edgeId: 'e2', outgoing: false });
   });
 
+  it('has attckPage bases per kind for authoritative links', () => {
+    expect(attckPage('technique')).toBe('https://attack.mitre.org/techniques');
+    expect(attckPage('group')).toBe('https://attack.mitre.org/groups');
+    expect(attckPage('software')).toBe('https://attack.mitre.org/software');
+    expect(attckPage('campaign')).toBe('https://attack.mitre.org/campaigns');
+  });
+
   it('returns an empty list for an unknown node', () => {
     expect(graphRelations(sampleGraph, 'ghost')).toEqual([]);
   });
@@ -95,6 +103,7 @@ describe('jobStage', () => {
   it('maps unknown/failed statuses to failed', () => {
     expect(jobStage('failed')).toEqual({ stage: 'failed', label: 'Analysis failed' });
     expect(jobStage('bogus')).toEqual({ stage: 'failed', label: 'Analysis failed' });
+    expect(jobStage('cancelled')).toEqual({ stage: 'cancelled', label: 'Analysis cancelled' });
   });
 });
 

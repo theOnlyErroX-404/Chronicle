@@ -133,6 +133,7 @@ export const ReportStatusSchema = z.enum([
   'modeling',
   'done',
   'failed',
+  'cancelled',
 ]);
 export type ReportStatus = z.infer<typeof ReportStatusSchema>;
 

@@ -2,7 +2,7 @@
 // literal (a color, a size limit, a type label) is defined once and shared by
 // the server default and the client component instead of being hardcoded twice.
 
-import type { AttckMapping, Graph, GraphNode, TimelineEvent } from '@/modules/shared/contracts';
+import type { AttckType, Graph, GraphNode } from '@/modules/shared/contracts';
 
 export const MAX_REPORT_BYTES = 10 * 1024 * 1024;
 
@@ -39,6 +39,8 @@ export const jobStage = (status: string, progress?: string): { stage: string; la
       return { stage: 'mapping', label: 'Building graph and mappings' };
     case 'done':
       return { stage: 'done', label: 'Analysis complete' };
+    case 'cancelled':
+      return { stage: 'cancelled', label: 'Analysis cancelled' };
     default:
       return { stage: 'failed', label: 'Analysis failed' };
   }
@@ -58,12 +60,9 @@ export const formatBytes = (bytes: number): string => {
 
 export const formatPercent = (value: number): string => `${Math.round(value * 100)}%`;
 
-// What the shared inspector shows for a tapped item. One discriminated union so
-// the workbench owns selection and the inspector renders whatever kind it gets.
-export type Selection =
-  | { kind: 'node'; node: GraphNode }
-  | { kind: 'timeline'; event: TimelineEvent }
-  | { kind: 'attck'; mapping: AttckMapping };
+// What the shared inspector shows for a tapped node. Timeline and ATT&CK are
+// self-contained views now; only the graph routes through the shared inspector.
+export type Selection = { kind: 'node'; node: GraphNode };
 
 export type GraphRelation = {
   edgeId: string;
@@ -93,4 +92,18 @@ export const graphRelations = (graph: Graph, nodeId: string): GraphRelation[] =>
     }
   }
   return relations;
+};
+
+// Base attack.mitre.org URL path per mapping kind, so every ATT&CK row links to
+// the authoritative page (the id itself appends on top, e.g. /techniques/T1087).
+export const attckPage = (type: AttckType): string => {
+  const segment =
+    type === 'technique'
+      ? 'techniques'
+      : type === 'group'
+        ? 'groups'
+        : type === 'software'
+          ? 'software'
+          : 'campaigns';
+  return `https://attack.mitre.org/${segment}`;
 };

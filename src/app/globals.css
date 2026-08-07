@@ -126,6 +126,15 @@ li.current .job-dot {
   color: var(--rust);
   border-color: var(--rust);
 }
+.stop {
+  color: var(--rust);
+  border-color: var(--rust);
+  margin-top: 8px;
+}
+input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 input {
   width: 100%;
   border: 1px solid var(--line);
@@ -445,7 +454,7 @@ button.sign-out {
 .view-main {
   min-width: 0;
 }
-.tlp {
+.report-id {
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 3px 7px;
@@ -457,38 +466,6 @@ button.sign-out {
 .file-numbers {
   color: var(--muted);
   font-size: 0.78rem;
-}
-.timeline {
-  display: flex;
-  gap: 0;
-  overflow-x: auto;
-  padding: 6px 2px 8px;
-  border-bottom: 2px solid var(--line);
-  margin-bottom: 10px;
-}
-.timeline-event {
-  justify-self: auto;
-  margin-top: 0;
-  min-width: 200px;
-  max-width: 260px;
-  text-align: left;
-  background: transparent;
-  color: var(--ink);
-  border: 0;
-  border-radius: 0;
-  padding: 4px 14px 8px;
-  border-top: 3px solid var(--line);
-  display: grid;
-  gap: 5px;
-  align-content: start;
-}
-.timeline-event:hover {
-  border-top-color: var(--teal);
-  background: var(--well);
-}
-.timeline-date {
-  font-size: 0.95rem;
-  font-weight: 700;
 }
 .tl-pill {
   justify-self: start;
@@ -502,19 +479,108 @@ button.sign-out {
   color: var(--muted);
   font-size: 0.72rem;
 }
-.tl-text {
+.tl-day {
+  color: var(--teal);
+  border-color: var(--teal);
+}
+.timeline-view {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.timeline-slider {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px 10px;
+  border-bottom: 2px solid var(--line);
+  align-items: stretch;
+}
+.tl-chip {
+  flex: 0 0 auto;
+  min-width: 96px;
+  height: 56px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  align-items: center;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  border-top: 3px solid var(--line);
+  padding: 0 12px;
+  cursor: pointer;
+}
+.tl-chip:hover,
+.tl-chip.active {
+  border-top-color: var(--teal);
+  background: var(--well);
+}
+.tl-chip-date {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.tl-chip .tl-pill {
+  justify-self: center;
+}
+.tl-detail {
+  min-height: 128px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--well);
+  padding: 14px 16px;
+}
+.tl-detail-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.tl-date {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.tl-detail-text {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+.tl-detail-match {
+  font-size: 0.72rem;
+  margin: 0;
+  border-left: 2px solid var(--line);
+  padding-left: 10px;
+}
+.attck-categories {
+  display: grid;
+  gap: 18px;
+}
+.attck-category-title {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--muted);
-  font-size: 0.78rem;
-  line-height: 1.4;
+  margin: 0 0 8px;
+}
+.attck-category-title span {
+  color: var(--line);
 }
 .attck-row {
-  justify-self: auto;
-  width: 100%;
-  margin-top: 0;
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+.attck-row-main {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
   text-align: left;
   background: transparent;
   color: var(--ink);
@@ -522,13 +588,41 @@ button.sign-out {
   border-radius: 0;
   font-weight: 400;
   padding: 0;
+  cursor: pointer;
 }
-.attck-row:hover {
+.attck-row-main:hover {
   color: var(--teal);
 }
 .attck-id {
   font-weight: 700;
   color: var(--teal);
+}
+.attck-link {
+  flex: 0 0 auto;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+.attck-link:hover {
+  color: var(--teal);
+  border-color: var(--teal);
+}
+.attck-evidence {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+  display: grid;
+  gap: 6px;
+}
+.attck-evidence-text {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--ink);
 }
 .panel-list .note {
   font-size: 0.75rem;

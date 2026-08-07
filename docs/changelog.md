@@ -4,6 +4,31 @@ All notable changes to Chronicle are documented here, newest first. The project
 has no tagged releases yet — sections are anchored to the plan phases in
 `docs/tasks.md`. Version tags are a planned 2-G (deploy) item.
 
+## 2026-08-07 — Analysis cancel + feedback round (branch feat/graph-redesign)
+
+Follow-up round per analyst feedback: **Stop now really cancels**, the fake
+TLP chip is gone, the timeline is a steady slider, and ATT&CK is categorized
+with authoritative links.
+
+- **Real cancel + locking**: new `POST /api/v1/jobs/[id]/cancel` — queues the
+  `cancelled` flag on the report and drops a not-yet-started BullMQ job;
+  `process-report` polls the flag between stages/at each chunk and aborts at the
+  next boundary, persisting `status: 'cancelled'`. Workbench adds a **Stop
+  analysis** button and disables the whole submission form (source toggles,
+  inputs, submit, retry, sign-out) while a job is queued/extracting/mapping.
+  `ReportStatusSchema` gains `cancelled`; `JobQueue.remove` is a best-effort
+  drop for queued jobs.
+- **Timeline**: replaced the uneven vertical event list with a uniform-height
+  horizontal slider (date + precision only) beside a fixed-height detail pane —
+  selecting an event never rescales the page.
+- **ATT&CK**: rows grouped into **Techniques / Groups / Software / Campaigns**
+  with per-category counts; each row carries an authoritative
+  `attack.mitre.org/{kind}/{id}` ↗ link (`attckPage` helper in
+  `lib/presentation`); tapping a row reveals its matched evidence inline.
+- **TLP:CLEAR chip removed** (decorative, not a real control) — replaced by the
+  short report id. The record panes now route only graph nodes through the
+  shared inspector; timeline and ATT&CK detail live in their own views.
+
 ## 2026-08-06 — ThreatGraph frontend redesign (branch feat/graph-redesign)
 
 The workbench is re-skinned to a graphite CTI-analyst surface per the new
