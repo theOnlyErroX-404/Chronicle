@@ -126,8 +126,10 @@ export const createBullMqQueue = (redisUrl: string): JobQueue => {
 
   return {
     enqueue(job: QueueJob): void {
+      // jobId === reportId so cancel can actually target the job by report id
+      // (BullMQ default ids are random UUIDs, which remove(jobId) then misses).
       queue
-        .add(job.reportId, toStoredJob(job))
+        .add(job.reportId, toStoredJob(job), { jobId: job.reportId })
         .catch((error) => console.error('[queue] failed to enqueue job:', error));
     },
 

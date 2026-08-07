@@ -10,12 +10,16 @@ Follow-up round per analyst feedback: **Stop now really cancels**, the fake
 TLP chip is gone, the timeline is a steady slider, and ATT&CK is categorized
 with authoritative links.
 
-- **Real cancel + locking**: new `POST /api/v1/jobs/[id]/cancel` — queues the
-  `cancelled` flag on the report and drops a not-yet-started BullMQ job;
-  `process-report` polls the flag between stages/at each chunk and aborts at the
-  next boundary, persisting `status: 'cancelled'`. Workbench adds a **Stop
-  analysis** button and disables the whole submission form (source toggles,
-  inputs, submit, retry, sign-out) while a job is queued/extracting/mapping.
+- **Real cancel + locking**: new `POST /api/v1/jobs/[id]/cancel` flips the
+  durable status to `cancelled` in both store backends (in-memory spread +
+  Postgres column) and drops not-yet-started jobs from the queue (BullMQ jobs
+  are keyed by id = report id so `remove` actually targets them). The pipeline
+  treats the status as the signal: it checks it between stages and at every
+  chunk boundary, and every intermediate status write is guarded so a cancel
+  that lands mid-run is never clobbered by the pipeline's next "ingesting /
+  extracting / modeling / done" write. Workbench adds a **Stop analysis**
+  button and disables the whole submission form (source toggles, inputs,
+  submit, retry, sign-out) while a job is queued/extracting/mapping.
   `ReportStatusSchema` gains `cancelled`; `JobQueue.remove` is a best-effort
   drop for queued jobs.
 - **Timeline**: replaced the uneven vertical event list with a uniform-height

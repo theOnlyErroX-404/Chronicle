@@ -52,7 +52,7 @@ describe('POST /api/v1/jobs/[id]/cancel', () => {
     mockReports.set('r1', base({ status: 'done' }));
     const response = await post('r1');
     expect(response.status).toBe(409);
-    expect(mockReports.get('r1')?.cancelled).toBeUndefined();
+    expect(mockReports.get('r1')?.status).toBe('done');
   });
 
   it('drops a queued job and persists cancelled status', async () => {
@@ -62,16 +62,21 @@ describe('POST /api/v1/jobs/[id]/cancel', () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ status: 'cancelled' });
     expect(mockQueue.remove).toHaveBeenCalledWith('r1');
-    expect(mockReports.get('r1')).toMatchObject({ status: 'cancelled', cancelled: true });
+    expect(mockReports.get('r1')).toMatchObject({
+      status: 'cancelled',
+      errorMessage: 'Analysis cancelled by the user.',
+    });
   });
 
-  it('flags an in-flight job and leaves the worker to flip the status', async () => {
+  it('flips an in-flight job to cancelled and lets the pipeline Abort', async () => {
     mockReports.clear();
     mockReports.set('r1', base({ status: 'extracting' }));
     const response = await post('r1');
     expect(response.status).toBe(200);
     expect(mockQueue.remove).not.toHaveBeenCalled();
-    expect(mockReports.get('r1')).toMatchObject({ cancelled: true, progress: 'cancelled' });
-    expect(mockReports.get('r1')?.status).toBe('extracting');
+    expect(mockReports.get('r1')).toMatchObject({
+      status: 'cancelled',
+      errorMessage: 'Analysis cancelled by the user.',
+    });
   });
 });

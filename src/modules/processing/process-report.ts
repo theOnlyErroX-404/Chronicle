@@ -30,15 +30,24 @@ export const processReport = async (reportId: string, source: IngestionSource) =
     await reportStore.update(reportId, { progress: text });
   };
 
-  // Cancellation is a flag, not a status: POST /jobs/[id]/cancel sets it and
-  // this pipeline polls between stages. Throwing here aborts the LLM loop at
-  // the next chunk boundary instead of letting a 5-minute chunk ride out.
+  // Cancellation is a status, not a flag: POST /jobs/[id]/cancel flips the
+  // durable status to 'cancelled' (both backends persist it), and this pipeline
+  // polls it between stages. Throwing here aborts the LLM loop at the next
+  // chunk boundary instead of letting a 5-minute chunk ride out.
   const cancelError = async (): Promise<never> => {
     throw new Error('cancelled');
   };
 
   const checkCancelled = async () => {
-    if ((await reportStore.get(reportId))?.cancelled) await cancelError();
+    if ((await reportStore.get(reportId))?.status === 'cancelled') await cancelError();
+  };
+
+  // A status transition that must not clobber a concurrent cancel: re-reads the
+  // durable status immediately before writing, so a cancel that arrived between
+  // two stage writes wins instead of being overwritten by the pipeline.
+  const checkpoint = async (patch: Parameters<typeof reportStore.update>[1]): Promise<void> => {
+    await checkCancelled();
+    await reportStore.update(reportId, patch);
   };
 
   // Persist the terminal status the cancel happened, preserving nothing further
@@ -77,13 +86,12 @@ export const processReport = async (reportId: string, source: IngestionSource) =
 
     const client = getLlmClient();
     await client.checkHealth();
-    await reportStore.update(reportId, {
+    await checkpoint({
       status: 'ingesting',
       errorMessage: undefined,
       partial: undefined,
       progress: 'ingesting',
     });
-    await checkCancelled();
     const rawText = await ingestReport(source);
     // ATT&CK mapping and the timeline need only the raw text (no LLM), so
     // compute both here — they then survive a later cancellation-free failure
@@ -92,7 +100,7 @@ export const processReport = async (reportId: string, source: IngestionSource) =
     await checkCancelled();
     const attck = matchExplicitTechniques(rawText);
     const timeline = extractTimelineEvents(rawText);
-    await reportStore.update(reportId, {
+    await checkpoint({
       rawText,
       attck,
       timeline,
@@ -114,7 +122,7 @@ export const processReport = async (reportId: string, source: IngestionSource) =
     });
     await checkCancelled();
     const completed = completeEntityEndpoints(extraction);
-    await reportStore.update(reportId, {
+    await checkpoint({
       extraction: { ...completed, stats: extraction.stats },
       status: 'modeling',
       progress: 'modeling',
@@ -122,7 +130,7 @@ export const processReport = async (reportId: string, source: IngestionSource) =
 
     const graph = buildGraph(completed);
     const stixBundle = buildStixLiteBundle(reportId, graph);
-    await reportStore.update(reportId, {
+    await checkpoint({
       graph,
       stixBundle,
       status: 'done',

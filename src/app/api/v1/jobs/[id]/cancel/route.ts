@@ -5,10 +5,13 @@ import { reportStore } from '@/modules/shared/report-store';
 
 export const runtime = 'nodejs';
 
-// Cancels a report that has not finished. Queued jobs are dropped outright and
-// marked cancelled; jobs already in a pipeline stage get a `cancelled` flag the
-// worker polls between stages and will stop at the next chunk boundary. The
-// status flip to 'cancelled' is persisted by whoever notices first.
+// Cancels a report that has not finished. 'cancelled' is a durable status in
+// both store backends (in-memory spread and the Postgres row), so the cancel
+// flips it immediately and the running pipeline — which polls the status
+// between stages and at every chunk boundary — aborts shortly after. Jobs that
+// were still queued are also dropped from the work queue as a best effort
+// (in-memory there is nothing to drop: the queued task is fine, its first
+// status check aborts it).
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     requireApiToken(request);
@@ -26,16 +29,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       );
     }
 
-    await reportStore.update(id, { cancelled: true, progress: 'cancelled' });
+    await reportStore.update(id, {
+      status: 'cancelled',
+      errorMessage: 'Analysis cancelled by the user.',
+      progress: undefined,
+      partial: undefined,
+    });
 
     if (report.status === 'queued') {
-      // Drop a not-yet-started job from the durable queue (in-memory backend
-      // leaves the task in place: the worker's own cancel check aborts it).
       jobQueue.remove?.(id);
-      await reportStore.update(id, {
-        status: 'cancelled',
-        errorMessage: 'Analysis cancelled by the user before it started.',
-      });
     }
 
     return Response.json({ report_id: id, status: 'cancelled' }, { status: 200 });

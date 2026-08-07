@@ -22,10 +22,6 @@ export type ReportRecord = {
   errorMessage?: string;
   progress?: string;
   partial?: boolean;
-  // Set by POST /jobs/[id]/cancel while the report is still running; the worker
-  // polls this between stages and stops. Status only becomes 'cancelled' when
-  // the worker (or the cancel handler for a queued job) persists it.
-  cancelled?: boolean;
   rawText?: string;
   extraction?: ExtractionResult;
   graph?: Graph;
