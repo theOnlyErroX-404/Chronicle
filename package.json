@@ -29,7 +29,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "unpdf": "^1.0.0",
-    "vis-network": "^10.1.0",
+    "vis-network": "^10.1.1",
     "zod": "^4.1.0"
   },
   "devDependencies": {
