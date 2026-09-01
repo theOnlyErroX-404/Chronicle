@@ -21,7 +21,7 @@
     "build:worker": "esbuild src/modules/processing/worker.ts --bundle --platform=node --format=cjs --outfile=.next/standalone/worker.cjs --alias:@=./src --external:@prisma/client --external:@prisma/adapter-pg --external:pg"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.9.1",
     "bullmq": "^6.0.7",
     "ioredis": "^6.0.0",
